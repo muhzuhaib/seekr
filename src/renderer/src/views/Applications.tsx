@@ -189,10 +189,12 @@ export default function Applications({ auth, onSignIn }: Props): JSX.Element {
                             <FileText size={13} />
                           </button>
 
+                          {/* Opens inside Seekr, like everywhere else — the only
+                              thing that still leaves for a real browser is nothing. */}
                           <button
                             className="btn sm ghost"
-                            data-tip="Open on Indeed"
-                            onClick={() => void window.seekr.openExternal(app.url)}
+                            data-tip="Open this listing"
+                            onClick={() => void window.seekr.job.openUrl(app.url, app.title)}
                           >
                             <ExternalLink size={13} />
                           </button>

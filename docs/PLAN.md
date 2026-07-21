@@ -178,6 +178,17 @@ Everything from the original spec, plus what has been added since. Ticked items 
 - [x] Git repository + .gitignore + README + MIT licence
 - [x] GitHub repo created and first release published (github.com/muhzuhaib/seekr, v0.2.0)
 
+### Indeed inside Seekr (v0.4.2)
+- [x] Applying and viewing a listing render as a `WebContentsView` in the main window, framed by
+      Seekr's own chrome, with Indeed's nav/footer/cookie banner hidden
+- [x] Apply opens on the form, by pressing Indeed's own Apply button once
+- [x] The verification check is parented to the app and framed by Seekr, with a "Not now" way out
+- [x] Nothing in the UI opens an external browser any more
+- [ ] **Not to be built:** a native re-implementation of the apply form. No public API, private
+      authenticated endpoints, employer-defined questions, and it would risk the user's real
+      account. Seekr never presses submit — see § 4 Applying.
+- [ ] **Not to be built:** solving or bypassing the bot check, in any form.
+
 ### Appearance
 - [x] Seven themes (v0.4.1): dark = Midnight / Graphite / Ink / Nocturne, light = Paper / Linen /
       Mist. A palette redefines only the surface family; everything else is inherited, and the

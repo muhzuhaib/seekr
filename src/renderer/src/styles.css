@@ -1627,6 +1627,129 @@ select {
   align-items: start;
 }
 
+/* ----------------------------------------------------- embedded Indeed panel
+   Seekr's frame around a real Indeed page. The page is a native view laid into
+   `.web-panel-slot` by the main process, so nothing may be drawn over the slot —
+   native views always paint above the DOM. The chrome goes around it. */
+
+.web-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: panel-in 220ms var(--ease) both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.web-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--titlebar-height);
+  flex-shrink: 0;
+  /* Clears the Windows caption buttons drawn over our frameless window. */
+  padding: 0 var(--window-controls) 0 var(--s3);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+.web-panel-head button {
+  -webkit-app-region: no-drag;
+}
+
+.web-panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-sm);
+}
+.web-panel-title strong {
+  font-weight: 600;
+  letter-spacing: var(--track-tight);
+}
+.web-panel-title span {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Provenance: this really is Indeed's own page, in your own session. */
+.web-panel-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.web-panel-slot {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-raised);
+}
+
+/* ------------------------------------------------- Indeed verification check
+   The check itself is a native window laid over the app's content area (it has to
+   be — Cloudflare binds it to the real browsing context, and Seekr never solves
+   one). This draws Seekr's explanation and the way out above it, so it reads as a
+   step in the app. The area below the caption belongs to that native window and
+   must stay empty. */
+
+.challenge-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  animation: fade 180ms var(--ease);
+}
+
+.challenge-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  /* Exactly the strip left free above the check (CHALLENGE_HEADER in ingest.ts). */
+  height: 92px;
+  padding: 0 var(--s6) var(--s3) calc(var(--s6) + 24px);
+}
+.challenge-head p {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--fg);
+  line-height: 1.5;
+  max-width: 62ch;
+}
+
+.challenge-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: var(--r-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 /* ------------------------------------------------------------ modern polish
    Small refinements applied last, so they win over the component rules above
    without those rules having to be rewritten. */

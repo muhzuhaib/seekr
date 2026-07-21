@@ -68,6 +68,17 @@ function createWindow(): BrowserWindow {
     width: 1100,
     height: 860,
     title: 'Indeed',
+    /*
+      Frameless, because the one time this window is ever shown — Indeed's
+      verification check — it is positioned over Seekr's own content area and
+      framed by Seekr's UI, so an OS title bar would give the game away.
+
+      It stays a real, visible window rather than an embedded view on purpose:
+      Cloudflare's widget has to run in the exact browsing context that was
+      challenged, and a throttled or zero-sized surface is precisely what made the
+      check unsolvable in early builds.
+    */
+    frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -152,6 +163,47 @@ export function destroyWorker(): void {
 let resolvingChallenge = false
 
 /**
+ * The main window, so the check can be positioned over Seekr's content area
+ * instead of appearing as a bare window somewhere on the desktop, and the UI can
+ * draw the explanation and the Cancel control around it.
+ */
+let getChallengeHost: () => BrowserWindow | null = () => null
+let onChallengeState: ((active: boolean) => void) | null = null
+/** Set by the renderer's Cancel button. */
+let cancelChallenge: (() => void) | null = null
+
+/** A getter, not a window: the main window doesn't exist yet when IPC registers. */
+export function setChallengeHost(fn: () => BrowserWindow | null): void {
+  getChallengeHost = fn
+}
+
+export function setChallengeListener(fn: (active: boolean) => void): void {
+  onChallengeState = fn
+}
+
+/** The user pressed Cancel in Seekr's own frame around the check. */
+export function dismissChallenge(): void {
+  cancelChallenge?.()
+}
+
+/** Height reserved at the top for Seekr's caption and Cancel button. */
+const CHALLENGE_HEADER = 92
+
+/** Lays the check over the host window's content area, below Seekr's caption. */
+function positionOverHost(win: BrowserWindow): void {
+  const app = getChallengeHost()
+  if (!app || app.isDestroyed()) return
+  const area = app.getContentBounds()
+  const inset = 24
+  win.setBounds({
+    x: area.x + inset,
+    y: area.y + CHALLENGE_HEADER,
+    width: Math.max(480, area.width - inset * 2),
+    height: Math.max(360, area.height - CHALLENGE_HEADER - inset)
+  })
+}
+
+/**
  * Shows the fetcher's *own* window so the user can clear Cloudflare's check in the
  * exact browsing context that was blocked, then hides it again and reports success.
  *
@@ -166,6 +218,16 @@ export function resolveChallengeInteractively(): Promise<boolean> {
   if (win.isDestroyed()) return Promise.resolve(false)
 
   resolvingChallenge = true
+  // Sit over Seekr's content area, as a panel of the app rather than a window of
+  // its own, and track the app if it is moved or resized while the check is up.
+  const app = getChallengeHost()
+  if (app && !app.isDestroyed()) {
+    win.setParentWindow(app)
+    positionOverHost(win)
+    app.on('move', () => positionOverHost(win))
+    app.on('resize', () => positionOverHost(win))
+  }
+  onChallengeState?.(true)
   win.show()
   win.focus()
 
@@ -178,12 +240,17 @@ export function resolveChallengeInteractively(): Promise<boolean> {
       clearInterval(poll)
       clearTimeout(giveUp)
       resolvingChallenge = false
+      cancelChallenge = null
+      onChallengeState?.(false)
       if (!win.isDestroyed()) {
         win.removeListener('closed', onClosed)
         win.hide()
       }
       resolve(ok)
     }
+
+    // "Cancel" in Seekr's frame is the same answer as closing the window was.
+    cancelChallenge = () => finish(false)
 
     // Closing the window is the user saying "not now".
     const onClosed = (): void => finish(false)

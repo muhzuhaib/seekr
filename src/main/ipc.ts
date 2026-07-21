@@ -30,11 +30,16 @@ import {
 } from './details'
 import {
   currentCooldownMs,
+  dismissChallenge,
   fetchJobDetail,
   ingestFeed,
   probeAuth,
-  resolveChallengeInteractively
+  resolveChallengeInteractively,
+  setChallengeHost,
+  setChallengeListener
 } from './ingest'
+import type { Rect } from './embed'
+import { closePanel, goBack, reloadPanel, setPanelBounds, setStateListener } from './embed'
 import { clearSession, openApply, openLogin, openPage } from './panels'
 import * as resumes from './resumes'
 import * as saved from './saved'
@@ -103,6 +108,11 @@ function afterFeed(query: FeedQuery, settings: Settings, jobs: Job[]): void {
 }
 
 export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
+  // The embedded Indeed panel tells the UI what to draw around it.
+  setStateListener((state) => broadcast('panel:state', state))
+  // And the verification check needs to know which window to sit over.
+  setChallengeHost(getMainWindow)
+
   // ------------------------------------------------------------ settings
 
   ipcMain.handle('settings:get', (): Settings => getSettings())
@@ -226,6 +236,29 @@ export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
     const job = getJob(jobId)
     if (win && job) openPage(win, job.url, job.title)
   })
+
+  ipcMain.handle('job:openUrl', (_e, url: string, title: string) => {
+    const win = getMainWindow()
+    // Only ever open real web URLs, and only inside our own panel.
+    if (win && /^https?:\/\//i.test(url)) openPage(win, url, title)
+  })
+
+  // ------------------------------------------------------ embedded Indeed panel
+
+  /*
+    The renderer draws the panel's chrome and measures the hole left for the page;
+    the native view is then laid into exactly that rectangle. Native views paint
+    above the DOM, so the two sides have to agree on the geometry — hence the
+    renderer being the one that decides it.
+  */
+  // Indeed's verification check, framed by Seekr rather than floating loose.
+  setChallengeListener((active) => broadcast('challenge:state', active))
+  ipcMain.handle('challenge:cancel', () => dismissChallenge())
+
+  ipcMain.handle('panel:bounds', (_e, rect: Rect) => setPanelBounds(rect))
+  ipcMain.handle('panel:close', () => closePanel())
+  ipcMain.handle('panel:back', () => goBack())
+  ipcMain.handle('panel:reload', () => reloadPanel())
 
   /**
    * Shows the fetcher's own window so the user can clear Indeed's verification

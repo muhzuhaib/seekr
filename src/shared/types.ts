@@ -369,6 +369,25 @@ export interface IngestStatus {
   cooldownUntil: number | null
 }
 
+// ------------------------------------------------------- embedded Indeed panel
+
+export type PanelKind = 'apply' | 'view'
+
+/**
+ * The state of the Indeed page embedded in the main window (applying, or reading
+ * a listing). The renderer draws Seekr's own chrome around it from this.
+ */
+export interface PanelState {
+  open: boolean
+  kind: PanelKind
+  /** The job title, so the header says what you are applying to. */
+  title: string
+  /** Host only — shown as provenance ("indeed.com"), never as an address bar. */
+  host: string
+  loading: boolean
+  canGoBack: boolean
+}
+
 // ------------------------------------------------------------------- updates
 
 /**

@@ -6,6 +6,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { regionByCode } from '../shared/types'
+import { closePanel } from './embed'
 import { destroyWorker, probeAuth } from './ingest'
 import { registerIpc, setAuthState } from './ipc'
 import { getSettings } from './settings'
@@ -141,6 +142,9 @@ function createWindow(): void {
   */
   mainWindow.on('closed', () => {
     mainWindow = null
+    // The embedded Indeed panel lives inside this window, so it goes first —
+    // and closing it is what settles anything waiting on it, like an apply flow.
+    closePanel()
     destroyWorker()
   })
 

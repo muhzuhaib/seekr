@@ -13,6 +13,7 @@ import type {
   FeedResult,
   IngestStatus,
   Job,
+  PanelState,
   Resume,
   SalaryInsight,
   SavedJob,
@@ -37,7 +38,10 @@ const api = {
     detail: (id: string): Promise<Job | null> => ipcRenderer.invoke('job:detail', id),
     /** Warm-up on hover, so the description is usually here before the click is. */
     prefetch: (id: string): Promise<void> => ipcRenderer.invoke('job:prefetch', id),
-    open: (id: string): Promise<void> => ipcRenderer.invoke('job:open', id)
+    open: (id: string): Promise<void> => ipcRenderer.invoke('job:open', id),
+    /** For listings we only hold a URL for — an application's saved link. */
+    openUrl: (url: string, title: string): Promise<void> =>
+      ipcRenderer.invoke('job:openUrl', url, title)
   },
 
   auth: {
@@ -98,6 +102,35 @@ const api = {
     status: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:status'),
     check: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:check'),
     install: (): Promise<boolean> => ipcRenderer.invoke('update:install')
+  },
+
+  /**
+   * The embedded Indeed panel (applying, and viewing a listing). The renderer
+   * draws the chrome and reports the rectangle the page should fill.
+   */
+  panel: {
+    bounds: (rect: { x: number; y: number; width: number; height: number }): Promise<void> =>
+      ipcRenderer.invoke('panel:bounds', rect),
+    close: (): Promise<void> => ipcRenderer.invoke('panel:close'),
+    back: (): Promise<void> => ipcRenderer.invoke('panel:back'),
+    reload: (): Promise<void> => ipcRenderer.invoke('panel:reload')
+  },
+
+  /** Indeed's verification check, framed by Seekr while it is up. */
+  challenge: {
+    cancel: (): Promise<void> => ipcRenderer.invoke('challenge:cancel')
+  },
+
+  onChallengeState: (fn: (active: boolean) => void): (() => void) => {
+    const handler = (_e: unknown, active: boolean) => fn(active)
+    ipcRenderer.on('challenge:state', handler)
+    return () => ipcRenderer.removeListener('challenge:state', handler)
+  },
+
+  onPanelState: (fn: (state: PanelState) => void): (() => void) => {
+    const handler = (_e: unknown, state: PanelState) => fn(state)
+    ipcRenderer.on('panel:state', handler)
+    return () => ipcRenderer.removeListener('panel:state', handler)
   },
 
   /** Opens Indeed in a visible window so the user can clear a verification check. */

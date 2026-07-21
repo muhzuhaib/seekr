@@ -1,16 +1,27 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bookmark, Briefcase, ClipboardList, Search, Settings as SettingsIcon } from 'lucide-react'
-import type { Application, AuthState, Settings } from '../../shared/types'
+import type { Application, AuthState, PanelState, Settings } from '../../shared/types'
 import { DEFAULT_SETTINGS } from '../../shared/types'
 import Feed from './views/Feed'
 import Applications from './views/Applications'
+import Challenge from './views/Challenge'
 import SettingsModal from './views/SettingsModal'
 import Onboarding from './views/Onboarding'
 import Saved from './views/Saved'
 import Tooltip from './views/Tooltip'
 import UpdateToast from './views/UpdateToast'
+import WebPanel from './views/WebPanel'
 
 type View = 'feed' | 'saved' | 'applications'
+
+const CLOSED_PANEL: PanelState = {
+  open: false,
+  kind: 'view',
+  title: '',
+  host: '',
+  loading: false,
+  canGoBack: false
+}
 
 export default function App(): JSX.Element {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
@@ -20,6 +31,13 @@ export default function App(): JSX.Element {
   const [auth, setAuth] = useState<AuthState>({ loggedIn: false, email: null, checkedAt: 0 })
   const [dueCount, setDueCount] = useState(0)
   const [savedCount, setSavedCount] = useState(0)
+  const [panel, setPanel] = useState<PanelState>(CLOSED_PANEL)
+  const [challenge, setChallenge] = useState(false)
+
+  // The embedded Indeed page tells us when it opens and closes, so Seekr can draw
+  // its own frame around it.
+  useEffect(() => window.seekr.onPanelState(setPanel), [])
+  useEffect(() => window.seekr.onChallengeState(setChallenge), [])
 
   // --- boot
   useEffect(() => {
@@ -190,6 +208,16 @@ export default function App(): JSX.Element {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/*
+        Indeed, shown inside Seekr rather than in a window of its own — applying
+        and reading a listing. Rendered last so its chrome sits above everything,
+        including the job detail it was opened from.
+      */}
+      {panel.open && <WebPanel state={panel} onClose={() => void window.seekr.panel.close()} />}
+
+      {/* Indeed's security check, framed by Seekr instead of floating loose. */}
+      {challenge && <Challenge />}
 
       <UpdateToast />
       <Tooltip />

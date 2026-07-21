@@ -1,15 +1,22 @@
 /**
- * The two moments Seekr shows real Indeed instead of its own UI: signing in, and
- * applying. Both run in a child window on the same `persist:indeed` partition as the
- * ingest worker, which is why one sign-in covers everything and survives a restart.
+ * The moments Seekr shows real Indeed instead of its own UI.
  *
- * Seekr never types the user's password and never presses submit on an application.
- * These panels exist so the user does those things themselves, in Indeed's genuine
- * flow, without leaving the app.
+ * **Signing in** keeps its own window: it is the one place a real password is
+ * typed, and it should look unmistakably like Indeed's own page rather than
+ * something Seekr drew.
+ *
+ * **Applying** and **viewing a listing** used to open a window too, which is what
+ * made the app feel like a launcher for Indeed. They now render inside the main
+ * window — see `embed.ts`.
+ *
+ * Either way: Seekr never types the user's password and never presses submit on an
+ * application. These panels exist so the user does those things themselves, in
+ * Indeed's genuine flow, without leaving the app.
  */
 
 import { BrowserWindow } from 'electron'
 import type { Job, Region } from '../shared/types'
+import { closePanel, openPanel, panelWebContents } from './embed'
 import { PARTITION, probeAuth } from './ingest'
 
 /**
@@ -120,35 +127,81 @@ export interface ApplyOutcome {
 }
 
 /**
- * Opens the real Indeed apply flow for a job. Resolves when the user closes the
- * panel, reporting whether we saw a completed application.
+ * Presses Indeed's own "Apply now" button once the listing has loaded, so the
+ * panel opens on the form rather than on the job advert the user has already read
+ * in Seekr.
+ *
+ * This is a navigation, not an application: it is the same click the user came to
+ * make, it submits nothing, and if the button isn't there (an "apply on company
+ * site" listing, or a layout we don't recognise) it quietly does nothing and
+ * leaves them on the page.
+ */
+const CLICK_APPLY = `(function () {
+  var sel = [
+    '#indeedApplyButton',
+    '[data-testid="indeed-apply-button"] button',
+    'button#indeedApplyButton',
+    '.jobsearch-IndeedApplyButton-newDesign',
+    '#applyButtonLinkContainer button',
+    '#viewJobButtonLinkContainer button'
+  ];
+  for (var i = 0; i < sel.length; i++) {
+    var el = document.querySelector(sel[i]);
+    if (el) { el.click(); return true; }
+  }
+  return false;
+})()`
+
+/**
+ * Opens the real Indeed apply flow for a job, inside the main window. Resolves
+ * when the user closes the panel, reporting whether we saw a completed
+ * application.
  */
 export function openApply(parent: BrowserWindow, job: Job): Promise<ApplyOutcome> {
   return new Promise((resolve) => {
-    const panel = createPanel(parent, `Apply — ${job.title}`)
     let applied = false
     let externalHandoff = false
+    let advanced = false
+    let settled = false
 
-    const inspect = (url: string) => {
+    const finish = (): void => {
+      if (settled) return
+      settled = true
+      resolve({ applied, externalHandoff })
+    }
+
+    openPanel(parent, { url: job.url, title: job.title, kind: 'apply', onClosed: finish })
+    const wc = panelWebContents()
+    if (!wc) return finish()
+
+    const inspect = (url: string): void => {
       if (APPLIED_PATTERNS.some((p) => p.test(url))) applied = true
       // "Apply on company site" leaves Indeed entirely; we can't confirm anything there.
       if (!/indeed\.[a-z.]+/i.test(url)) externalHandoff = true
     }
 
-    panel.webContents.on('did-navigate', (_e, url) => inspect(url))
-    panel.webContents.on('did-navigate-in-page', (_e, url) => inspect(url))
+    wc.on('did-navigate', (_e, url) => inspect(url))
+    wc.on('did-navigate-in-page', (_e, url) => inspect(url))
 
-    panel.on('closed', () => resolve({ applied, externalHandoff }))
-    panel.loadURL(job.url)
+    // Jump to the form, once, on the first page only.
+    wc.once('did-finish-load', () => {
+      if (advanced) return
+      advanced = true
+      void wc.executeJavaScript(CLICK_APPLY, true).catch(() => undefined)
+    })
+
+    // Belt and braces: if the view is torn down some other way, still settle.
+    wc.once('destroyed', finish)
   })
 }
 
 /**
- * Opens a job's Indeed page read-only — used by "View on Indeed" and by the
- * "complete the verification check" prompt when Indeed challenges the fetcher.
+ * Opens a job's Indeed page read-only inside the main window — used by
+ * "View on Indeed".
  */
-export function openPage(parent: BrowserWindow, url: string, title = 'Indeed'): BrowserWindow {
-  const panel = createPanel(parent, title)
-  panel.loadURL(url)
-  return panel
+export function openPage(parent: BrowserWindow, url: string, title = 'Indeed'): void {
+  openPanel(parent, { url, title, kind: 'view' })
 }
+
+/** Used when the app closes, or when the user leaves the panel. */
+export { closePanel }
