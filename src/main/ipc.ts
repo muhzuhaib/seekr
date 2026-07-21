@@ -21,6 +21,7 @@ import { regionByCode } from '../shared/types'
 import * as applications from './applications'
 import { buildFeed, getJob, merge, upsert } from './corpus'
 import * as corpus from './corpus'
+import { detailFor, prefetchDetail } from './details'
 import {
   currentCooldownMs,
   fetchJobDetail,
@@ -72,8 +73,8 @@ export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
   /** Instant: reads the local corpus only. */
   ipcMain.handle('feed:get', (_e, query: FeedQuery): FeedResult => {
     const settings = getSettings()
-    const { jobs, filteredOut } = buildFeed(query, settings)
-    return { jobs, warning: null, fetchedAt: Date.now(), filteredOut }
+    const { jobs, filteredOut, workModeMatches } = buildFeed(query, settings)
+    return { jobs, warning: null, fetchedAt: Date.now(), filteredOut, workModeMatches }
   })
 
   /**
@@ -146,23 +147,19 @@ export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
       cooldownUntil: cooldown > 0 ? Date.now() + cooldown : null
     })
 
-    const { jobs, filteredOut } = buildFeed(query, settings)
-    return { jobs, warning, fetchedAt: Date.now(), filteredOut }
+    const { jobs, filteredOut, workModeMatches } = buildFeed(query, settings)
+    return { jobs, warning, fetchedAt: Date.now(), filteredOut, workModeMatches }
   })
 
   /** Pulls the full description on demand, and caches it back into the corpus. */
-  ipcMain.handle('job:detail', async (_e, jobId: string): Promise<Job | null> => {
-    const job = getJob(jobId)
-    if (!job) return null
-    if (job.description) return job
+  ipcMain.handle('job:detail', (_e, jobId: string): Promise<Job | null> => detailFor(jobId))
 
-    const detail = await fetchJobDetail(job.url)
-    if (!detail?.description) return job
-
-    const enriched: Job = { ...job, description: detail.description }
-    upsert(enriched)
-    return enriched
-  })
+  /*
+    Warm-up, fired when the pointer rests on a card. Returns immediately: the UI
+    must never wait on speculative work, and a failed guess must never surface as
+    an error the user sees.
+  */
+  ipcMain.handle('job:prefetch', (_e, jobId: string): void => prefetchDetail(jobId))
 
   ipcMain.handle('job:open', (_e, jobId: string) => {
     const win = getMainWindow()

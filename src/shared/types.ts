@@ -91,6 +91,9 @@ export interface FeedResult {
   fetchedAt: number
   /** How many jobs the filters removed, so "no results" is explainable. */
   filteredOut: number
+  /** Of those, how many did match the chosen work mode — lets the empty state
+   *  name the filter actually responsible. */
+  workModeMatches: number
 }
 
 // ---------------------------------------------------------------- salary insight
@@ -171,7 +174,17 @@ export interface Settings {
   /** Minimum corpus sample before a salary comparison is shown at all. */
   salaryMinSample: number
   corpusLimit: number
+
+  /**
+   * BETA — how wide the feed runs. 'standard' is the centred reading column,
+   * 'wide' uses the full window, 'columns' is a two-up grid. Exposed as a
+   * temporary toolbar toggle so the user can live with each before we commit.
+   */
+  layout: LayoutMode
 }
+
+/** BETA. See `Settings.layout`. */
+export type LayoutMode = 'standard' | 'wide' | 'columns'
 
 export const DEFAULT_SETTINGS: Settings = {
   region: null,
@@ -185,7 +198,8 @@ export const DEFAULT_SETTINGS: Settings = {
   blockedKeywords: [],
   blockedCompanies: [],
   salaryMinSample: 5,
-  corpusLimit: 5000
+  corpusLimit: 5000,
+  layout: 'standard'
 }
 
 // ---------------------------------------------------------------- regions

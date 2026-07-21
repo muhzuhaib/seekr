@@ -35,6 +35,8 @@ const api = {
 
   job: {
     detail: (id: string): Promise<Job | null> => ipcRenderer.invoke('job:detail', id),
+    /** Warm-up on hover, so the description is usually here before the click is. */
+    prefetch: (id: string): Promise<void> => ipcRenderer.invoke('job:prefetch', id),
     open: (id: string): Promise<void> => ipcRenderer.invoke('job:open', id)
   },
 

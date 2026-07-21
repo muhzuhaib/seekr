@@ -142,6 +142,10 @@ Everything from the original spec, plus what has been added since. Ticked items 
 - [x] "Top" is a labelled estimate (rank + promoted flags + applicant hints + recency)
 - [x] Work-mode sub-filters: Remote / Hybrid / On-site
 - [x] Scored remote classifier that rejects "remote" clickbait
+- [x] Reads Indeed's structured "Work Location:" line as authoritative
+- [x] Re-classifies work mode once the full description is fetched
+- [x] Empty feed names the filter actually responsible for hiding everything
+- [x] Descriptions cached forever + prefetched on hover (instant open)
 - [x] Adjustable remote strictness
 - [x] Date Reveal — exact posting dates from Indeed's `pubDate`
 - [x] Stale dimming past a user-set age
@@ -168,11 +172,17 @@ Everything from the original spec, plus what has been added since. Ticked items 
 - [x] Auto-update via electron-updater against GitHub Releases
 - [x] "Update available — restart to install" toast
 - [x] App version + "Check for updates" in Settings → About
-- [x] Git repository + .gitignore + README
+- [x] Git repository + .gitignore + README + MIT licence
 - [x] GitHub repo created and first release published (github.com/muhzuhaib/seekr, v0.2.0)
+
+### Beta / undecided
+- [ ] Feed layout: Standard vs Full width vs Two columns — temporary toolbar switch, user testing
+      (once decided, move into Settings → Appearance and remove the toolbar chip)
 
 ### Still to verify / do
 - [ ] Verify Google sign-in inside the embedded login window
 - [ ] One real end-to-end apply, confirming the `.txt` snapshot and dashboard row
 - [ ] Check Top / Highest-paid ordering against a large corpus
 - [ ] Sanity-check salary medians once the corpus is big enough to be meaningful
+- [ ] Consider a slow background backfill of descriptions for the visible page, so work-mode
+      detection doesn't depend on the user hovering each card

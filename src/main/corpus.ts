@@ -172,6 +172,8 @@ function sortFor(filter: FeedFilter, now: number): (a: Job, b: Job) => number {
 export interface FeedOutput {
   jobs: Job[]
   filteredOut: number
+  /** How many jobs cleared the work-mode filter, before salary/date narrowed it. */
+  workModeMatches: number
 }
 
 /**
@@ -184,6 +186,14 @@ export function buildFeed(query: FeedQuery, settings: Settings, now = Date.now()
 
   const keywords =
     query.useSavedKeywords && settings.keywordFilterEnabled ? settings.savedKeywords : query.keywords
+
+  /*
+    Counted separately so an empty feed can name the filter that emptied it.
+    "Remote" plus "Salary shown" is a genuinely common way to land on zero results
+    while dozens of remote jobs exist — they just don't state pay — and a generic
+    "no jobs match" left the user thinking the remote filter was broken.
+  */
+  let workModeMatches = 0
 
   const kept = pool.filter((job) => {
     if (isBlocked(job, settings)) {
@@ -198,6 +208,7 @@ export function buildFeed(query: FeedQuery, settings: Settings, now = Date.now()
       removed++
       return false
     }
+    workModeMatches++
     if (query.requireSalary && !hasSalary(job)) {
       removed++
       return false
@@ -219,7 +230,7 @@ export function buildFeed(query: FeedQuery, settings: Settings, now = Date.now()
   })
 
   kept.sort(sortFor(query.filter, now))
-  return { jobs: kept, filteredOut: removed }
+  return { jobs: kept, filteredOut: removed, workModeMatches }
 }
 
 export function clearRegion(region: string): void {

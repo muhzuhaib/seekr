@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import {
   Bookmark,
   Building2,
@@ -35,10 +36,37 @@ export default function JobCard({
   const salary = salaryLabel(job.salary)
   const mode = job.workMode.mode
 
+  /*
+    Hover-intent prefetch. Resting the pointer on a card for a moment starts
+    fetching its description, so the click that follows usually opens instantly
+    instead of waiting on the network. The delay keeps a pointer sweeping across
+    the list from firing off a request per card.
+  */
+  const hoverTimer = useRef<number | null>(null)
+
+  const startPrefetch = (): void => {
+    if (job.description || hoverTimer.current !== null) return
+    hoverTimer.current = window.setTimeout(() => {
+      hoverTimer.current = null
+      void window.seekr.job.prefetch(job.id)
+    }, 140)
+  }
+
+  const cancelPrefetch = (): void => {
+    if (hoverTimer.current === null) return
+    window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+  }
+
+  useEffect(() => cancelPrefetch, [])
+
   return (
     <article
       className={`job-card ${stale ? 'stale' : ''} ${selected ? 'selected' : ''}`}
       onClick={() => onOpen(job)}
+      onMouseEnter={startPrefetch}
+      onMouseLeave={cancelPrefetch}
+      onFocus={startPrefetch}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {

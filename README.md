@@ -32,3 +32,7 @@ npm run dist       # build the Windows installer into release/
 ```
 
 Built with Electron, React and TypeScript. No native modules, so no build tools required.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

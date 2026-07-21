@@ -160,7 +160,12 @@ export default function App(): JSX.Element {
 
       <div className="main">
         {view === 'feed' && (
-          <Feed settings={settings} auth={auth} onOpenSettings={() => setShowSettings(true)} />
+          <Feed
+            settings={settings}
+            auth={auth}
+            onOpenSettings={() => setShowSettings(true)}
+            onUpdateSettings={update}
+          />
         )}
         {view === 'saved' && <Saved settings={settings} auth={auth} />}
         {view === 'applications' && (

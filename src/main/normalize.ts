@@ -175,10 +175,31 @@ const REMOTE_POSITIVE: [RegExp, number, string][] = [
   [/\bwork from anywhere\b/i, 0.5, 'work from anywhere'],
   [/\bremote[-\s]?first\b/i, 0.45, 'remote-first company'],
   [/\banywhere in the (world|country|us|uk)\b/i, 0.45, 'no geographic tie'],
+  [/\bwork(ing)?\s+remotely\b/i, 0.4, 'says the work is done remotely'],
+  [/\bremote\s+(job|role|position|opportunity|work|working)\b/i, 0.35, 'describes itself as remote work'],
   [/\bno office\b|\bdistributed team\b/i, 0.3, 'distributed team'],
   [/\btelecommut(e|ing)\b/i, 0.25, 'mentions telecommuting'],
   [/\bwork from home\b|\bwfh\b/i, 0.2, 'mentions work from home']
 ]
+
+/**
+ * Indeed puts a structured **Work Location** line at the foot of most descriptions
+ * — "Work Location: Remote", "Work Location: In person", "Work Location: Hybrid
+ * remote in Lahore". It is a form field the employer filled in, not marketing
+ * prose, which makes it the single most trustworthy signal in the body text.
+ *
+ * We were ignoring it completely, so a listing whose only remote evidence was
+ * this line ("Experienced Upwork Bidder (Remote – Pakistan)") was being scored as
+ * on-site. Now it is read first and settles the question.
+ */
+const WORK_LOCATION_FIELD = /\b(?:work|job)\s*location\s*[:\-–—]\s*([^\n\r]{0,60})/i
+
+/**
+ * "(Remote)" or "(Remote – Pakistan)" in a job *title* is deliberate labelling by
+ * the employer. A country or region in the brackets is still remote — only a
+ * specific city would contradict it, and that is caught by the negatives below.
+ */
+const TITLE_REMOTE = /\(\s*remote\b[^)]*\)|\bremote\b\s*[–—-]\s*\w|^\s*remote\b/i
 
 /**
  * Negative signals — the clickbait detectors. A listing that spams "remote" but
@@ -253,7 +274,53 @@ export function classifyWorkMode(
     }
   }
 
+  /*
+    Next most trustworthy: the structured "Work Location:" line Indeed appends to
+    the description. Same reasoning as the work model above — it is a filled-in
+    field, not prose — so it also settles the question rather than merely scoring.
+  */
+  const workLocation = body.match(WORK_LOCATION_FIELD)?.[1]?.trim()
+  if (workLocation) {
+    if (/hybrid/i.test(workLocation)) {
+      return {
+        mode: 'hybrid',
+        confidence: 0.9,
+        positives: ['listing states a hybrid work location'],
+        negatives: []
+      }
+    }
+    if (/\bin[-\s]?person\b|\bon[-\s]?site\b|\bonsite\b/i.test(workLocation)) {
+      return {
+        mode: 'onsite',
+        confidence: 0.9,
+        positives: [],
+        negatives: ['listing states the work location is in person']
+      }
+    }
+    // "Remote", "Remote in Pakistan", "Fully remote" — but not "Remote in Lahore,
+    // Punjab", which the concrete-place test below would rightly distrust.
+    if (/\bremote\b/i.test(workLocation) && !LOCATION_CONCRETE.test(workLocation)) {
+      return {
+        mode: 'remote',
+        confidence: 0.92,
+        positives: ['listing states "Work Location: Remote"'],
+        negatives: []
+      }
+    }
+  }
+
   let score = 0
+
+  // A title the employer explicitly labelled "(Remote)" is a strong claim; it can
+  // still be undercut by the negatives, which is exactly what we want.
+  if (TITLE_REMOTE.test(title)) {
+    // Weighted to clear the default threshold *on its own*: an employer who wrote
+    // "(Remote)" into the title and named no location has made a plain claim, and
+    // nothing contradicts it. Any concrete location or office requirement carries a
+    // penalty of at least this much, so the clickbait cases still fall through.
+    score += 0.6
+    positives.push('title says the role is remote')
+  }
 
   // Indeed's own remote tag is a decent signal but not proof — it is set by the
   // employer, which is precisely where the clickbait originates.

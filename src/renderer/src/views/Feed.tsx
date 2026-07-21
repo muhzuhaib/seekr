@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Building,
   Clock3,
+  Columns3,
   Flame,
   Loader2,
   RefreshCw,
@@ -18,6 +19,7 @@ import type {
   FeedQuery,
   IngestStatus,
   Job,
+  LayoutMode,
   SalaryInsight,
   Settings,
   WorkMode
@@ -30,7 +32,20 @@ interface Props {
   settings: Settings
   auth: AuthState
   onOpenSettings: () => void
+  onUpdateSettings: (patch: Partial<Settings>) => void
 }
+
+/*
+  BETA — feed width. The centred reading column leaves a lot of empty space on a
+  wide monitor, so this cycles through the three candidates in place. It's a
+  temporary control: once a winner is picked it moves into Settings → Appearance
+  and this button goes away.
+*/
+const LAYOUTS: { id: LayoutMode; label: string; hint: string }[] = [
+  { id: 'standard', label: 'Standard', hint: 'Centred reading column — the current look' },
+  { id: 'wide', label: 'Full width', hint: 'Cards stretch the whole window' },
+  { id: 'columns', label: 'Two columns', hint: 'Cards in a two-up grid' }
+]
 
 const FILTERS: { id: FeedFilter; label: string; icon: JSX.Element; hint: string }[] = [
   {
@@ -60,7 +75,12 @@ const MODES: { id: WorkMode | 'any'; label: string }[] = [
   { id: 'hybrid', label: 'Hybrid' }
 ]
 
-export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Element {
+export default function Feed({
+  settings,
+  auth,
+  onOpenSettings,
+  onUpdateSettings
+}: Props): JSX.Element {
   const [filter, setFilter] = useState<FeedFilter>('recent')
   const [mode, setMode] = useState<WorkMode | 'any'>('any')
   const [requireSalary, setRequireSalary] = useState(false)
@@ -68,6 +88,7 @@ export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Ele
   const [jobs, setJobs] = useState<Job[]>([])
   const [insights, setInsights] = useState<Record<string, SalaryInsight>>({})
   const [filteredOut, setFilteredOut] = useState(0)
+  const [workModeMatches, setWorkModeMatches] = useState(0)
   const [warning, setWarning] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<IngestStatus | null>(null)
@@ -117,6 +138,7 @@ export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Ele
         : await window.seekr.feed.get(query)
       setJobs(result.jobs)
       setFilteredOut(result.filteredOut)
+      setWorkModeMatches(result.workModeMatches)
       setWarning(result.warning)
       setLoading(false)
       void loadInsights(result.jobs)
@@ -145,7 +167,25 @@ export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Ele
 
   const busy = status?.running ?? false
   const activeFilter = FILTERS.find((f) => f.id === filter)!
+  const activeLayout = LAYOUTS.find((l) => l.id === settings.layout) ?? LAYOUTS[0]
   const needsVerification = !!warning && /verification check/i.test(warning)
+
+  /*
+    An empty feed should name the filter that emptied it.
+
+    "Remote" + "Salary shown" is the case that caused real confusion: there were
+    genuinely remote jobs, but none of them stated pay, so the list went to zero
+    and looked like the remote filter was broken. Now it says exactly that.
+  */
+  const modeLabel = MODES.find((m) => m.id === mode)?.label.toLowerCase() ?? 'this work mode'
+  const emptyExplanation =
+    requireSalary && workModeMatches > 0
+      ? `Seekr found ${workModeMatches} ${mode === 'any' ? '' : `${modeLabel} `}job${workModeMatches === 1 ? '' : 's'}, but ${workModeMatches === 1 ? 'it doesn’t' : 'none of them'} state pay. Turn off “Salary shown” to see ${workModeMatches === 1 ? 'it' : 'them'}.`
+      : mode !== 'any' && workModeMatches === 0 && filteredOut > 0
+        ? `None of the ${filteredOut} listing${filteredOut === 1 ? '' : 's'} Seekr has for ${region.label} came out as ${modeLabel}. Try “Any”, or fetch more listings.`
+        : filteredOut > 0
+          ? `Seekr hid ${filteredOut} listing${filteredOut === 1 ? '' : 's'} because of your filters. Try widening the work mode, or turn off “Salary shown”.`
+          : `Nothing came back for ${activeFilter.label.toLowerCase()} in ${region.label}. Try refreshing, or search for a job title.`
 
   return (
     <>
@@ -200,7 +240,7 @@ export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Ele
         </button>
       </header>
 
-      <div className="toolbar">
+      <div className={`toolbar layout-${settings.layout}`}>
         <div className="segmented">
           {MODES.map((m) => (
             <button
@@ -237,13 +277,28 @@ export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Ele
         )}
 
         <div className="spacer" />
+
+        {/* BETA layout switch — temporary, see LAYOUTS above. */}
+        <button
+          className="chip beta"
+          onClick={() => {
+            const index = LAYOUTS.findIndex((l) => l.id === settings.layout)
+            onUpdateSettings({ layout: LAYOUTS[(index + 1) % LAYOUTS.length].id })
+          }}
+          data-tip={`${activeLayout.hint} — click to try the next layout (beta)`}
+        >
+          <Columns3 size={13} />
+          {activeLayout.label}
+          <span className="beta-dot">beta</span>
+        </button>
+
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-subtle)' }}>
           {jobs.length} job{jobs.length === 1 ? '' : 's'}
         </span>
       </div>
 
       <div className="content">
-        <div className="reader">
+        <div className={`reader layout-${settings.layout}`}>
           {warning && (
             <div className="banner warn">
               <AlertTriangle size={15} />
@@ -295,11 +350,7 @@ export default function Feed({ settings, auth, onOpenSettings }: Props): JSX.Ele
                 <SearchX size={22} />
               </div>
               <h3>No jobs match these filters</h3>
-              <p>
-                {filteredOut > 0
-                  ? `Seekr hid ${filteredOut} listing${filteredOut === 1 ? '' : 's'} because of your filters. Try widening the work mode, or turn off "Salary shown".`
-                  : `Nothing came back for ${activeFilter.label.toLowerCase()} in ${region.label}. Try refreshing, or search for a job title.`}
-              </p>
+              <p>{emptyExplanation}</p>
               <button className="btn" onClick={() => void apply(true)} disabled={busy}>
                 <RefreshCw size={14} />
                 Fetch from Indeed

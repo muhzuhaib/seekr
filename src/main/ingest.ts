@@ -18,6 +18,7 @@ import {
   type ExtractionResult
 } from './extract'
 import { normaliseJob } from './normalize'
+import type { Lane } from './throttle'
 import { cooldownRemaining, penalise, reward, schedule } from './throttle'
 
 /** One partition for the whole app — ingest, login and apply all share this jar. */
@@ -261,7 +262,12 @@ function waitForPageSettled(wc: Electron.WebContents, ms: number): Promise<void>
   })
 }
 
-async function loadAndExtract(url: string, extractor: string): Promise<ExtractionResult> {
+async function loadAndExtract(
+  url: string,
+  extractor: string,
+  /** 'interactive' when the user is watching a spinner for this exact page. */
+  lane: Lane = 'background'
+): Promise<ExtractionResult> {
   return schedule(async () => {
     const win = getWorker()
     const wc = win.webContents
@@ -308,7 +314,7 @@ async function loadAndExtract(url: string, extractor: string): Promise<Extractio
     } finally {
       wc.removeListener('did-navigate', onNavigate)
     }
-  })
+  }, lane)
 }
 
 export interface IngestOptions {
@@ -423,9 +429,12 @@ export interface JobDetail {
  * apply time, and giving the work-mode classifier the whole body rather than a
  * snippet when it has to judge a "remote" claim.
  */
-export async function fetchJobDetail(url: string): Promise<JobDetail | null> {
+export async function fetchJobDetail(
+  url: string,
+  lane: Lane = 'interactive'
+): Promise<JobDetail | null> {
   try {
-    const result = (await loadAndExtract(url, buildDetailExtractor())) as unknown as {
+    const result = (await loadAndExtract(url, buildDetailExtractor(), lane)) as unknown as {
       challenged?: boolean
       description?: string | null
       salaryText?: string | null

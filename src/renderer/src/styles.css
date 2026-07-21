@@ -63,8 +63,8 @@
   --bg-input: #0f1216;
 
   --fg: #e8ecf1;
-  --fg-muted: #9aa5b4;
-  --fg-subtle: #6b7482;
+  --fg-muted: #aeb9c8;
+  --fg-subtle: #8592a3;
 
   --border: #232931;
   --border-strong: #2f3742;
@@ -73,6 +73,16 @@
   --warn: #d29922;
   --bad: #f85149;
   --info: #58a6ff;
+
+  /*
+    Accent text on a dark background.
+
+    The accent is user-chosen and tuned for a white page — #2563eb as *text* on
+    #0b0d10 is genuinely hard to read. Anything that paints the accent as text
+    uses this instead, so every accent stays legible in both themes without the
+    user having to pick a different colour.
+  */
+  --accent-text: color-mix(in srgb, var(--accent) 55%, #ffffff);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -101,6 +111,9 @@
   --warn: #9a6700;
   --bad: #cf222e;
   --info: #0969da;
+
+  /* On a light background the chosen accent is already legible as text. */
+  --accent-text: var(--accent);
 
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.09);
@@ -294,7 +307,7 @@ select {
   background: var(--bg-hover);
 }
 .rail-btn.active {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 /* The active marker slides rather than jumps between sections. */
@@ -440,7 +453,7 @@ select {
 .chip.on {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .spacer {
@@ -529,14 +542,14 @@ select {
   transition: color var(--fast), background var(--fast), transform var(--fast);
 }
 .bookmark:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .bookmark:active {
   transform: scale(0.9);
 }
 .bookmark.on {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .job-meta {
@@ -588,7 +601,7 @@ select {
 }
 .tag.salary {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .tag.hot {
   background: color-mix(in srgb, var(--warn) 16%, transparent);
@@ -909,7 +922,7 @@ select {
   color: var(--fg);
 }
 .modal-tabs button.active {
-  color: var(--accent);
+  color: var(--accent-text);
   border-bottom-color: var(--accent);
 }
 
@@ -1316,7 +1329,7 @@ select {
   animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .update-toast > svg {
-  color: var(--accent);
+  color: var(--accent-text);
   flex-shrink: 0;
 }
 .update-toast-text {
@@ -1340,4 +1353,36 @@ select {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ------------------------------------------------------- feed layout (BETA)
+   Three candidate widths, switched from the toolbar while the user decides.
+   `standard` is the existing centred column and needs no rules of its own. */
+
+.reader.layout-wide,
+.toolbar.layout-wide,
+.reader.layout-columns,
+.toolbar.layout-columns {
+  max-width: none;
+}
+
+/* Two-up grid. auto-fit with a sensible minimum means a narrow window quietly
+   falls back to one column rather than squeezing two unreadable ones. */
+.layout-columns .job-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  align-items: start;
+}
+
+/* The beta marker on the layout switch, so it never reads as a settled feature. */
+.chip .beta-dot {
+  margin-left: 2px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  color: var(--warn);
 }

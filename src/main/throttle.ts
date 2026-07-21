@@ -7,9 +7,21 @@
 
 const MIN_GAP_MS = 2500
 const JITTER_MS = 1200
+
+/**
+ * Interactive gap: the user clicked a job and is watching a spinner.
+ *
+ * The rule we hold ourselves to is "browse at human pace, one request in flight" —
+ * and a person reading a results list genuinely does open listings faster than one
+ * every 2.5 s. Making *them* wait out the bulk-crawl gap was our pacing being
+ * conservative in the one place it costs the user something, so foreground page
+ * views get a shorter gap. Background crawling is unchanged.
+ */
+const INTERACTIVE_GAP_MS = 700
+const INTERACTIVE_JITTER_MS = 300
+
 const MAX_BACKOFF_MS = 10 * 60_000
 
-let queue: Promise<unknown> = Promise.resolve()
 let lastRequestAt = 0
 let backoffMs = 0
 let cooldownUntil = 0
@@ -33,26 +45,60 @@ export function reward(): void {
   cooldownUntil = 0
 }
 
+/** Interactive work runs before background work. Still one request at a time. */
+export type Lane = 'background' | 'interactive'
+
+interface Waiting {
+  lane: Lane
+  start: () => void
+}
+
+const waiting: Waiting[] = []
+let running = false
+
+function pump(): void {
+  if (running) return
+  // Interactive first, otherwise oldest-first. A background crawl must never make
+  // the user wait behind it for a page they are actively looking at.
+  const index = waiting.findIndex((w) => w.lane === 'interactive')
+  const next = waiting.splice(index >= 0 ? index : 0, 1)[0]
+  if (!next) return
+  running = true
+  next.start()
+}
+
 /**
- * Serialises every network-touching task through a single chain. Callers just
- * `await schedule(fn)` and never think about pacing again.
+ * Serialises every network-touching task. Callers just `await schedule(fn)` and
+ * never think about pacing again. Pass `'interactive'` for anything a user is
+ * waiting on right now.
  */
-export function schedule<T>(task: () => Promise<T>): Promise<T> {
-  const run = queue.then(async () => {
-    const now = Date.now()
+export function schedule<T>(task: () => Promise<T>, lane: Lane = 'background'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = async (): Promise<void> => {
+      try {
+        const now = Date.now()
+        if (cooldownUntil > now) await sleep(cooldownUntil - now)
 
-    if (cooldownUntil > now) await sleep(cooldownUntil - now)
+        const since = Date.now() - lastRequestAt
+        const gap =
+          lane === 'interactive'
+            ? INTERACTIVE_GAP_MS + Math.random() * INTERACTIVE_JITTER_MS
+            : MIN_GAP_MS + Math.random() * JITTER_MS
+        if (since < gap) await sleep(gap - since)
 
-    const since = Date.now() - lastRequestAt
-    const gap = MIN_GAP_MS + Math.random() * JITTER_MS
-    if (since < gap) await sleep(gap - since)
+        lastRequestAt = Date.now()
+        resolve(await task())
+      } catch (err) {
+        reject(err)
+      } finally {
+        // Always hand the lane on, even if this task threw — otherwise one failure
+        // would wedge every request behind it forever.
+        running = false
+        pump()
+      }
+    }
 
-    lastRequestAt = Date.now()
-    return task()
+    waiting.push({ lane, start })
+    pump()
   })
-
-  // Keep the chain alive even if this task rejects, otherwise one failure would
-  // wedge every future request behind a rejected promise.
-  queue = run.catch(() => undefined)
-  return run
 }
