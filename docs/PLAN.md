@@ -169,7 +169,7 @@ Everything from the original spec, plus what has been added since. Ticked items 
 - [x] "Update available — restart to install" toast
 - [x] App version + "Check for updates" in Settings → About
 - [x] Git repository + .gitignore + README
-- [ ] GitHub repo created and first release published (user action — see LOG)
+- [x] GitHub repo created and first release published (github.com/muhzuhaib/seekr, v0.2.0)
 
 ### Still to verify / do
 - [ ] Verify Google sign-in inside the embedded login window
