@@ -1,0 +1,19 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+
+# Local scratch work
+scratchpad/
+
+# Editors
+.vscode/
+.idea/
+
+# Internal development diary (kept private; not part of the public project)
+docs/LOG.md

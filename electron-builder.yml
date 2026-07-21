@@ -1,0 +1,33 @@
+appId: com.zuhaib.seekr
+productName: Seekr
+directories:
+  buildResources: build
+  output: release
+files:
+  - '!src/*'
+  - '!docs/*'
+  - '!build/*'
+  - '!release/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.gitignore,CLAUDE.md,tsconfig.json,electron-builder.yml}'
+# Auto-update source. electron-builder writes this into the packaged app as
+# app-update.yml, which is what electron-updater reads at runtime — so this block
+# is the single place the update feed is defined.
+publish:
+  provider: github
+  owner: muhzuhaib
+  repo: seekr
+  releaseType: release
+win:
+  executableName: Seekr
+  icon: build/icon.ico
+  target:
+    - nsis
+nsis:
+  artifactName: Seekr-Setup-${version}.${ext}
+  shortcutName: Seekr
+  uninstallDisplayName: Seekr
+  createDesktopShortcut: always
+  oneClick: true
+electronDist: node_modules/electron/dist
+npmRebuild: false

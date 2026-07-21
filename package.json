@@ -1,0 +1,37 @@
+{
+  "name": "seekr",
+  "version": "0.2.0",
+  "description": "Seekr — a fast, elegant desktop client for Indeed job search",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/muhzuhaib/seekr.git"
+  },
+  "main": "./out/main/index.js",
+  "author": "Muhammad Zuhaib Zahid",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "icon": "node scripts/make-icon.mjs",
+    "dist": "node scripts/make-icon.mjs && electron-vite build && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}
