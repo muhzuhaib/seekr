@@ -260,8 +260,19 @@ export function buildDetailExtractor(): string {
     return { challenged: true };
   }
 
+  /*
+    The company's star rating, as the job page renders it: an element labelled
+    "2.8 out of 5 stars". Verified against live markup 2026-07-22. The page carries
+    no companyRating in its JSON, unlike a search card, so the label is the source.
+  */
+  var ratingEl = document.querySelector('[aria-label*="out of 5 star" i]');
+  var ratingLabel = ratingEl ? (ratingEl.getAttribute('aria-label') || '') : '';
+  var ratingMatch = ratingLabel.match(/([0-9](?:\\.[0-9])?)\\s*out of 5/i);
+  var companyRating = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+
   return {
     challenged: false,
+    companyRating: companyRating && companyRating > 0 ? companyRating : null,
     description:
       grab('#jobDescriptionText') ||
       grab('[data-testid="jobsearch-JobComponent-description"]') ||

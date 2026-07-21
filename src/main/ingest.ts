@@ -613,6 +613,8 @@ export interface JobDetail {
   description: string | null
   salaryText: string | null
   location: string | null
+  /** Filled in for listings cached before ratings existed. */
+  companyRating: number | null
 }
 
 /**
@@ -634,12 +636,14 @@ export async function fetchJobDetail(
       description?: string | null
       salaryText?: string | null
       location?: string | null
+      companyRating?: number | null
     }
     if (result.challenged) throw new BotChallengeError()
     return {
       description: result.description ?? null,
       salaryText: result.salaryText ?? null,
-      location: result.location ?? null
+      location: result.location ?? null,
+      companyRating: result.companyRating ?? null
     }
   } catch {
     return null

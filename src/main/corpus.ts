@@ -9,6 +9,7 @@
 import type { FeedFilter, FeedQuery, Job, Settings, WorkMode } from '../shared/types'
 import { LOOKBACK_DAYS } from '../shared/types'
 import { parseSalary } from './normalize'
+import { ratingFor, rememberAll } from './ratings'
 import { createStore } from './store'
 
 const DAY_MS = 86_400_000
@@ -22,6 +23,36 @@ const store = createStore<CorpusFile>('jobs.json', { jobs: [] })
 /** id → job, rebuilt on boot. Keeps merge and lookup O(1). */
 const index = new Map<string, Job>()
 for (const job of store.get().jobs) index.set(job.id, migrate(job))
+shareCompanyRatings()
+
+/**
+ * A star rating belongs to the **company**, not to the listing — so one listing
+ * that carries it can answer for every other listing from the same employer.
+ *
+ * This matters because ratings only started being collected in v0.4.1: everything
+ * cached before that has none, and re-fetching hundreds of old listings to fill
+ * them in would be both slow and rude. Instead, any employer we have a rating for
+ * anywhere gets it applied everywhere. In practice this is the difference between
+ * a third of the feed showing a rating and almost all of it.
+ *
+ * Matching is exact (case- and space-insensitive) on the company name. Fuzzier
+ * matching would eventually attach one company's score to another's listing,
+ * which is a worse outcome than a missing star.
+ */
+export function shareCompanyRatings(): void {
+  // Anything a listing arrived with is worth remembering for the whole company.
+  rememberAll(
+    [...index.values()]
+      .filter((job) => job.companyRating)
+      .map((job) => ({ company: job.company, rating: job.companyRating }))
+  )
+
+  for (const [id, job] of index) {
+    if (job.companyRating) continue
+    const rating = ratingFor(job.company)
+    if (rating) index.set(id, { ...job, companyRating: rating })
+  }
+}
 
 /**
  * Brings a stored job up to date with the current rules.
@@ -57,6 +88,8 @@ export function merge(jobs: Job[], corpusLimit: number): void {
         // A job belongs to every search it has ever come back from, so arriving
         // via a search never removes it from the home feed and vice versa.
         queries: [...new Set([...(existing.queries ?? [existing.query]), ...job.queries])],
+        // Never let a fetch that happened not to carry a rating erase one we have.
+        companyRating: job.companyRating ?? existing.companyRating,
         postedAt: job.postedAtApproximate && existing.postedAt && !existing.postedAtApproximate
           ? existing.postedAt
           : (job.postedAt ?? existing.postedAt),
@@ -69,6 +102,9 @@ export function merge(jobs: Job[], corpusLimit: number): void {
       index.set(job.id, job)
     }
   }
+  // Fresh listings routinely bring a rating for an employer already sitting in the
+  // corpus without one, so the sharing pass runs again after every merge.
+  shareCompanyRatings()
   evict(corpusLimit)
   persist()
 }

@@ -194,6 +194,9 @@ Everything from the original spec, plus what has been added since. Ticked items 
       Mist. A palette redefines only the surface family; everything else is inherited, and the
       accent picker composes with all of them. Remembered per mode.
 - [x] Company star ratings beside the company name (v0.4.1), hidden entirely when Indeed has none
+- [x] Ratings are stored **per company** in `ratings.json` (v0.4.3), shared across every listing from
+      that employer and backfilled in the background for listings cached before the feature existed.
+      `null` means "checked, they have no rating" — that is what stops it asking twice.
 
 ### Settled
 - [x] Feed layout: Standard / Full width / Two columns — kept as a permanent feature (v0.4.0).

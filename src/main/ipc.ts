@@ -22,6 +22,7 @@ import * as applications from './applications'
 import { buildFeed, getJob, merge, upsert } from './corpus'
 import * as corpus from './corpus'
 import {
+  backfillRatings,
   couldBeRemote,
   detailFor,
   prefetchDetail,
@@ -64,6 +65,8 @@ function broadcast(channel: string, payload: unknown): void {
 
 /** True while a remote-verification pass is running, so passes can't stack up. */
 let verifyingRemote = false
+/** Likewise for the company-rating backfill. */
+let backfillingRatings = false
 
 /**
  * Work that runs after a feed has been handed to the UI — never before, so it can
@@ -78,6 +81,22 @@ let verifyingRemote = false
  */
 function afterFeed(query: FeedQuery, settings: Settings, jobs: Job[]): void {
   prefetchMany(jobs.map((j) => j.id))
+
+  /*
+    Fill in ratings for the top of the feed. One lookup per employer, ever — the
+    answer is remembered, including "they have no rating" — so this converges to
+    nothing after a few screenfuls and never repeats itself.
+  */
+  if (!backfillingRatings) {
+    backfillingRatings = true
+    void backfillRatings(jobs.slice(0, 40))
+      .then((found) => {
+        if (found > 0) broadcast('corpus:changed', found)
+      })
+      .finally(() => {
+        backfillingRatings = false
+      })
+  }
 
   if (query.workMode !== 'remote' || verifyingRemote) return
 

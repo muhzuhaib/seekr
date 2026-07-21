@@ -21,8 +21,9 @@
 
 import type { Job } from '../shared/types'
 import { fetchJobDetail } from './ingest'
-import { getJob, upsert } from './corpus'
+import { getJob, shareCompanyRatings, upsert } from './corpus'
 import { classifyWorkMode, parseSalary } from './normalize'
+import { companyKey, isChecked, remember } from './ratings'
 import { regionByCode } from '../shared/types'
 
 /**
@@ -47,7 +48,13 @@ let prefetching = 0
  * only *filled in*, never overwritten, since the card's own values came from
  * Indeed's structured search data.
  */
-function enrich(job: Job, description: string, salaryText: string | null, location: string | null): Job {
+function enrich(
+  job: Job,
+  description: string,
+  salaryText: string | null,
+  location: string | null,
+  companyRating: number | null
+): Job {
   const body = `${job.snippet}\n${description}`
   const region = regionByCode(job.region)
 
@@ -56,6 +63,8 @@ function enrich(job: Job, description: string, salaryText: string | null, locati
     description,
     location: job.location || location || '',
     salary: job.salary ?? parseSalary(salaryText, region.currency),
+    // Listings cached before ratings existed get theirs here.
+    companyRating: job.companyRating ?? companyRating,
     /*
       Indeed's own remote tag and work model are passed back in.
 
@@ -110,7 +119,13 @@ export function detailFor(
         failed.add(jobId)
         return job
       }
-      const enriched = enrich(job, detail.description, detail.salaryText, detail.location)
+      const enriched = enrich(
+        job,
+        detail.description,
+        detail.salaryText,
+        detail.location,
+        detail.companyRating
+      )
       upsert(enriched)
       return enriched
     })
@@ -142,6 +157,50 @@ const PREFETCH_BATCH = 8
  */
 export function prefetchMany(jobIds: string[]): void {
   for (const id of jobIds.slice(0, PREFETCH_BATCH)) prefetchDetail(id)
+}
+
+// ------------------------------------------------------------ rating backfill
+
+/**
+ * Fills in company ratings for listings cached before ratings existed.
+ *
+ * Those listings already have their descriptions, so nothing else would ever
+ * fetch them again — the feed would show no rating for obviously-rated employers
+ * until the listings aged out. The lookup is **per company, once, ever**: the
+ * answer (including "they have no rating") is remembered in `ratings.json`, so a
+ * screenful costs a handful of quiet background page loads and never repeats.
+ */
+const RATING_BATCH = 10
+
+export async function backfillRatings(jobs: Job[]): Promise<number> {
+  const wanted: Job[] = []
+  const seenCompanies = new Set<string>()
+
+  for (const job of jobs) {
+    if (job.companyRating || !job.company) continue
+    const key = companyKey(job.company)
+    if (!key || seenCompanies.has(key) || isChecked(job.company)) continue
+    seenCompanies.add(key)
+    wanted.push(job)
+    if (wanted.length >= RATING_BATCH) break
+  }
+
+  if (wanted.length === 0) return 0
+
+  const found = await Promise.all(
+    wanted.map(async (job) => {
+      // Background lane: this is housekeeping, and must never delay a real click.
+      const detail = await fetchJobDetail(job.url, 'background').catch(() => null)
+      // A null answer is recorded too — that is what stops us asking again about
+      // an employer Indeed simply has no reviews for.
+      remember(job.company, detail?.companyRating ?? null)
+      return detail?.companyRating ? 1 : 0
+    })
+  )
+
+  // Push whatever was learned out across every listing from those companies.
+  shareCompanyRatings()
+  return found.reduce((a: number, b: number) => a + b, 0)
 }
 
 // -------------------------------------------------------------- remote backfill
