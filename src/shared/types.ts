@@ -58,8 +58,23 @@ export interface Job {
   urgentlyHiring: boolean
   applicantHint: number | null
 
+  /** Indeed's own remote tag from the search card. Kept so re-classifying a job
+   *  after its description arrives doesn't throw the original signals away. */
+  remoteFlag: boolean
+  /** Indeed's structured work model, e.g. `REMOTE_HYBRID`. Same reason. */
+  remoteModel: string | null
+
   region: string
+  /** The search this job most recently arrived from. `''` is the home feed. */
   query: string
+  /**
+   * Every search this job has arrived from, `''` included.
+   *
+   * A job seen in the home feed and again in a search belongs to both, and the
+   * home feed must show only home-feed listings — otherwise clearing the search
+   * box left the results of the last search sitting in the feed for ever.
+   */
+  queries: string[]
   /** When Seekr ingested it. Used for cache freshness and corpus eviction. */
   fetchedAt: number
 }
@@ -73,6 +88,13 @@ export interface SavedJob extends Job {
 }
 
 export type FeedFilter = 'recent' | 'top' | 'paid'
+
+/**
+ * How far back a feed looks, in days. One number, used by the Indeed search URL,
+ * the local feed filter, the freshness score and the UI copy — so "the last 30
+ * days" can never mean three different things in three places.
+ */
+export const LOOKBACK_DAYS = 30
 
 export interface FeedQuery {
   filter: FeedFilter
@@ -176,15 +198,22 @@ export interface Settings {
   corpusLimit: number
 
   /**
-   * BETA — how wide the feed runs. 'standard' is the centred reading column,
-   * 'wide' uses the full window, 'columns' is a two-up grid. Exposed as a
-   * temporary toolbar toggle so the user can live with each before we commit.
+   * How wide the feed runs. 'standard' is the centred reading column, 'wide' uses
+   * the full window, 'columns' is a two-up grid. A settled feature: switchable
+   * from the feed toolbar and from Settings → Appearance.
    */
   layout: LayoutMode
 }
 
-/** BETA. See `Settings.layout`. */
+/** See `Settings.layout`. */
 export type LayoutMode = 'standard' | 'wide' | 'columns'
+
+/** The three feed widths, described once and used by both places that offer them. */
+export const LAYOUTS: { id: LayoutMode; label: string; hint: string }[] = [
+  { id: 'standard', label: 'Standard', hint: 'A centred reading column' },
+  { id: 'wide', label: 'Full width', hint: 'Cards stretch the whole window' },
+  { id: 'columns', label: 'Two columns', hint: 'Cards in a two-up grid' }
+]
 
 export const DEFAULT_SETTINGS: Settings = {
   region: null,

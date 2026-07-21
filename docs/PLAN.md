@@ -31,7 +31,10 @@ The **same** `persist:indeed` session partition is used by the offscreen ingest 
 panel, and the apply panel. That is what makes one login cover everything and survive restarts.
 
 ### Rules we hold ourselves to
-- One request in flight at a time, ≥ 2.5 s apart with jitter (`throttle.ts`).
+- Background crawling: one request in flight, ≥ 2.2 s apart with jitter (`throttle.ts`).
+- Foreground (v0.4.0): up to 3 at once, ~250 ms apart, across a small pool of reader windows — a
+  person reading a results list genuinely does open several listings quickly. Background work
+  yields to it entirely, so speculative fetching can never delay a real click.
 - Cache aggressively; never re-fetch a page we already have unless the user asks for fresh data.
 - On 429 / 403, back off exponentially and surface it in the UI.
 - **Never** attempt to solve or bypass a CAPTCHA or bot check. If one appears, show the embedded
@@ -175,14 +178,17 @@ Everything from the original spec, plus what has been added since. Ticked items 
 - [x] Git repository + .gitignore + README + MIT licence
 - [x] GitHub repo created and first release published (github.com/muhzuhaib/seekr, v0.2.0)
 
-### Beta / undecided
-- [ ] Feed layout: Standard vs Full width vs Two columns — temporary toolbar switch, user testing
-      (once decided, move into Settings → Appearance and remove the toolbar chip)
+### Settled
+- [x] Feed layout: Standard / Full width / Two columns — kept as a permanent feature (v0.4.0).
+      The toolbar chip stays (it is the fastest way to switch) and the same setting also lives in
+      Settings → Appearance. The BETA marker is gone.
 
 ### Still to verify / do
 - [ ] Verify Google sign-in inside the embedded login window
 - [ ] One real end-to-end apply, confirming the `.txt` snapshot and dashboard row
-- [ ] Check Top / Highest-paid ordering against a large corpus
+- [x] Check Top / Highest-paid ordering against a large corpus (v0.4.0: verified strictly descending
+      across 260+ salaried listings, after fixing three salary-parsing faults that put junk on top)
 - [ ] Sanity-check salary medians once the corpus is big enough to be meaningful
-- [ ] Consider a slow background backfill of descriptions for the visible page, so work-mode
-      detection doesn't depend on the user hovering each card
+- [x] Background backfill of descriptions (v0.4.0): the first 8 cards of every feed are warmed, and
+      choosing Remote fetches the description of every possible remote job, because the
+      "Job Location:" line that actually decides it only exists on the job page

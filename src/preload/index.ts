@@ -127,6 +127,16 @@ const api = {
     ipcRenderer.on('saved:changed', handler)
     return () => ipcRenderer.removeListener('saved:changed', handler)
   },
+  /**
+   * Fired when the corpus changed underneath the UI — currently when the remote
+   * check re-decides some listings — so the feed can re-read itself without the
+   * user pressing anything.
+   */
+  onCorpusChanged: (fn: () => void): (() => void) => {
+    const handler = (): void => fn()
+    ipcRenderer.on('corpus:changed', handler)
+    return () => ipcRenderer.removeListener('corpus:changed', handler)
+  },
   onUpdateStatus: (fn: (status: UpdateStatus) => void): (() => void) => {
     const handler = (_e: unknown, status: UpdateStatus) => fn(status)
     ipcRenderer.on('update:status', handler)

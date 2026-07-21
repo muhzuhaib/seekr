@@ -21,7 +21,13 @@ import { regionByCode } from '../shared/types'
 import * as applications from './applications'
 import { buildFeed, getJob, merge, upsert } from './corpus'
 import * as corpus from './corpus'
-import { detailFor, prefetchDetail } from './details'
+import {
+  couldBeRemote,
+  detailFor,
+  prefetchDetail,
+  prefetchMany,
+  verifyRemoteCandidates
+} from './details'
 import {
   currentCooldownMs,
   fetchJobDetail,
@@ -51,6 +57,51 @@ function broadcast(channel: string, payload: unknown): void {
   }
 }
 
+/** True while a remote-verification pass is running, so passes can't stack up. */
+let verifyingRemote = false
+
+/**
+ * Work that runs after a feed has been handed to the UI — never before, so it can
+ * never make the user wait.
+ *
+ *  - warms the descriptions of the first few cards, so the first clicks open
+ *    instantly;
+ *  - when the Remote filter is on, fetches the descriptions of everything that
+ *    *might* be remote, because the "Job Location:" line that settles it only
+ *    exists on the job page. Genuine remote jobs used to be filtered out simply
+ *    because Seekr had never read their description.
+ */
+function afterFeed(query: FeedQuery, settings: Settings, jobs: Job[]): void {
+  prefetchMany(jobs.map((j) => j.id))
+
+  if (query.workMode !== 'remote' || verifyingRemote) return
+
+  const candidates = corpus.all().filter((j) => j.region === query.region).filter(couldBeRemote)
+  if (candidates.length === 0) return
+  verifyingRemote = true
+
+  broadcast('ingest:status', {
+    running: true,
+    phase: 'fetching',
+    message: `Checking ${candidates.length} listing${candidates.length === 1 ? '' : 's'} for remote work…`,
+    progress: 0,
+    cooldownUntil: null
+  })
+
+  void verifyRemoteCandidates(candidates).then((found) => {
+    verifyingRemote = false
+    broadcast('ingest:status', {
+      running: false,
+      phase: 'idle',
+      message: found > 0 ? `Found ${found} more remote job${found === 1 ? '' : 's'}` : 'Up to date',
+      progress: 1,
+      cooldownUntil: null
+    })
+    // The verdicts changed underneath the UI, so tell it to re-read the corpus.
+    if (found > 0) broadcast('corpus:changed', buildFeed(query, settings).jobs.length)
+  })
+}
+
 export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
   // ------------------------------------------------------------ settings
 
@@ -74,6 +125,7 @@ export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle('feed:get', (_e, query: FeedQuery): FeedResult => {
     const settings = getSettings()
     const { jobs, filteredOut, workModeMatches } = buildFeed(query, settings)
+    afterFeed(query, settings, jobs)
     return { jobs, warning: null, fetchedAt: Date.now(), filteredOut, workModeMatches }
   })
 
@@ -111,6 +163,13 @@ export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
           region,
           query: term,
           filter: query.filter,
+          /*
+            When the user is looking at the Remote tab, ask Indeed for remote jobs
+            using its own refinement rather than downloading a general feed and
+            hoping our classifier rescues the remote ones. This is the fix for
+            "the Indeed website shows remote jobs that Seekr doesn't".
+          */
+          remoteOnly: query.workMode === 'remote',
           onProgress: (done, total) => {
             broadcast('ingest:status', {
               running: true,
@@ -148,6 +207,7 @@ export function registerIpc(getMainWindow: () => BrowserWindow | null): void {
     })
 
     const { jobs, filteredOut, workModeMatches } = buildFeed(query, settings)
+    afterFeed(query, settings, jobs)
     return { jobs, warning, fetchedAt: Date.now(), filteredOut, workModeMatches }
   })
 

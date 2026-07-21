@@ -56,7 +56,22 @@ function enrich(job: Job, description: string, salaryText: string | null, locati
     description,
     location: job.location || location || '',
     salary: job.salary ?? parseSalary(salaryText, region.currency),
-    workMode: classifyWorkMode(job.title, job.location || location || '', body, false, null)
+    /*
+      Indeed's own remote tag and work model are passed back in.
+
+      They used to be dropped here (`false, null`), which quietly *demoted* jobs:
+      a listing Indeed itself labelled remote would be re-judged from prose alone,
+      and a named city in the location field was enough to push it to on-site. That
+      is a large part of why the Remote filter looked empty. The description's own
+      "Job Location:" line still outranks both, so a genuine correction still wins.
+    */
+    workMode: classifyWorkMode(
+      job.title,
+      job.location || location || '',
+      body,
+      job.remoteFlag,
+      job.remoteModel
+    )
   }
 }
 
@@ -66,7 +81,11 @@ function enrich(job: Job, description: string, salaryText: string | null, locati
  * `background: true` marks a speculative prefetch: it yields the lane to anything
  * the user is actually waiting for, and gives up quietly when the queue is busy.
  */
-export function detailFor(jobId: string, background = false): Promise<Job | null> {
+export function detailFor(
+  jobId: string,
+  background = false,
+  speculative = background
+): Promise<Job | null> {
   const job = getJob(jobId)
   if (!job) return Promise.resolve(null)
 
@@ -76,8 +95,11 @@ export function detailFor(jobId: string, background = false): Promise<Job | null
   const existing = inflight.get(jobId)
   if (existing) return existing
 
-  if (background) {
-    if (failed.has(jobId)) return Promise.resolve(job)
+  if (failed.has(jobId)) return Promise.resolve(job)
+
+  // Only *guesses* are capped. Work the user asked for — even indirectly, like
+  // verifying the remote filter — is queued in full, just at background priority.
+  if (speculative) {
     if (prefetching >= MAX_PREFETCH_IN_FLIGHT) return Promise.resolve(job)
     prefetching++
   }
@@ -98,7 +120,7 @@ export function detailFor(jobId: string, background = false): Promise<Job | null
     })
     .finally(() => {
       inflight.delete(jobId)
-      if (background) prefetching--
+      if (speculative) prefetching--
     })
 
   inflight.set(jobId, run)
@@ -108,4 +130,63 @@ export function detailFor(jobId: string, background = false): Promise<Job | null
 /** Fire-and-forget warm-up, used when the pointer rests on a card. */
 export function prefetchDetail(jobId: string): void {
   void detailFor(jobId, true).catch(() => undefined)
+}
+
+/** How many cards a delivered feed warms up. */
+const PREFETCH_BATCH = 8
+
+/**
+ * Warms a whole screenful at once, in the order the user is likely to read it.
+ * Called when a feed is delivered, so the first clicks of a browsing session are
+ * already answered from cache.
+ */
+export function prefetchMany(jobIds: string[]): void {
+  for (const id of jobIds.slice(0, PREFETCH_BATCH)) prefetchDetail(id)
+}
+
+// -------------------------------------------------------------- remote backfill
+
+/**
+ * The Remote filter's missing half.
+ *
+ * Whether a job is genuinely remote is usually only decidable from the "Job
+ * Location:" line at the foot of its description — and a search card carries no
+ * description at all. So a listing that really is remote sat in the corpus judged
+ * on prose, and the Remote filter looked broken while Indeed's own site showed the
+ * job plainly.
+ *
+ * This fetches the descriptions of everything that *might* be remote, so the
+ * verdict is made on the employer's own words. Each job costs this exactly once,
+ * ever, because the description is then cached for good.
+ */
+const MAYBE_REMOTE = /\bremote\b|\bwork from home\b|\bwfh\b|\bwork from anywhere\b|\btelecommut/i
+
+export function couldBeRemote(job: Job): boolean {
+  if (job.workMode.mode === 'remote') return false // already settled
+  if (job.description) return false // already judged on the full text
+  if (job.remoteFlag || job.remoteModel) return true
+  return MAYBE_REMOTE.test(`${job.title}\n${job.location}\n${job.snippet}`)
+}
+
+/** How many unverified listings one pass will check. Keeps a session polite. */
+const VERIFY_BATCH = 12
+
+/**
+ * Fetches descriptions for the remote candidates in `jobs` and reports how many
+ * came out remote, so the UI can refresh itself once rather than per job.
+ */
+export async function verifyRemoteCandidates(jobs: Job[]): Promise<number> {
+  const candidates = jobs.filter(couldBeRemote).slice(0, VERIFY_BATCH)
+  if (candidates.length === 0) return 0
+
+  const results = await Promise.all(
+    candidates.map(async (job) => {
+      // Interactive lane: the user is sitting on the Remote tab waiting for this
+      // answer, so it is foreground work, not a guess.
+      const updated = await detailFor(job.id, false, false).catch(() => null)
+      return updated?.workMode.mode === 'remote' ? 1 : 0
+    })
+  )
+
+  return results.reduce((a: number, b: number) => a + b, 0)
 }

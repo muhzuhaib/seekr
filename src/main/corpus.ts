@@ -7,6 +7,8 @@
  */
 
 import type { FeedFilter, FeedQuery, Job, Settings, WorkMode } from '../shared/types'
+import { LOOKBACK_DAYS } from '../shared/types'
+import { parseSalary } from './normalize'
 import { createStore } from './store'
 
 const DAY_MS = 86_400_000
@@ -19,7 +21,22 @@ const store = createStore<CorpusFile>('jobs.json', { jobs: [] })
 
 /** id → job, rebuilt on boot. Keeps merge and lookup O(1). */
 const index = new Map<string, Job>()
-for (const job of store.get().jobs) index.set(job.id, job)
+for (const job of store.get().jobs) index.set(job.id, migrate(job))
+
+/**
+ * Brings a stored job up to date with the current rules.
+ *
+ * Listings are cached indefinitely, so a parsing fix that only applies to newly
+ * fetched jobs leaves the old bad data sitting in the feed for ever. Re-parsing
+ * the salary from the original string is what removes, for example, a company's
+ * review count that once parsed as a £305,500 salary and sorted itself to the top
+ * of Highest paid.
+ */
+function migrate(job: Job): Job {
+  const queries = job.queries ?? [job.query ?? '']
+  const salary = job.salary?.raw ? parseSalary(job.salary.raw, job.salary.currency) : job.salary
+  return { ...job, queries, salary: salary ?? null }
+}
 
 // ---------------------------------------------------------------- writing
 
@@ -35,6 +52,9 @@ export function merge(jobs: Job[], corpusLimit: number): void {
         ...existing,
         ...job,
         description: job.description ?? existing.description,
+        // A job belongs to every search it has ever come back from, so arriving
+        // via a search never removes it from the home feed and vice versa.
+        queries: [...new Set([...(existing.queries ?? [existing.query]), ...job.queries])],
         postedAt: job.postedAtApproximate && existing.postedAt && !existing.postedAtApproximate
           ? existing.postedAt
           : (job.postedAt ?? existing.postedAt),
@@ -141,10 +161,10 @@ export function popularityScore(job: Job, now = Date.now()): number {
   if (job.promoted) score += 0.15
   if (job.applicantHint !== null) score += Math.min(job.applicantHint / 100, 0.5)
 
-  // Freshness matters for "trending" — a hot job from today beats one from day nine.
+  // Freshness matters for "trending" — a hot job from today beats last month's.
   if (job.postedAt) {
     const ageDays = (now - job.postedAt) / DAY_MS
-    score += Math.max(0, (10 - ageDays) / 10) * 0.4
+    score += Math.max(0, (LOOKBACK_DAYS - ageDays) / LOOKBACK_DAYS) * 0.4
   }
 
   // A stated salary correlates with a serious, well-engaged posting.
@@ -158,13 +178,16 @@ function sortFor(filter: FeedFilter, now: number): (a: Job, b: Job) => number {
     return (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0)
   }
   if (filter === 'paid') {
-    return (a, b) => {
-      // Comparing yearly-normalised maxima keeps hourly and salaried roles honest
-      // against each other.
-      const av = a.salary?.maxYearly ?? a.salary?.minYearly ?? -1
-      const bv = b.salary?.maxYearly ?? b.salary?.minYearly ?? -1
-      return bv - av
-    }
+    /*
+      Strictly highest pay first — never date. Comparing yearly-normalised figures
+      keeps an hourly rate honest against a salary, and the *top* of a range is
+      what "highest paid" means to a person reading the list. Ties fall back to the
+      bottom of the range, then to recency, so the order is stable rather than
+      whatever the corpus happened to be holding.
+    */
+    const pay = (job: Job): number => job.salary?.maxYearly ?? job.salary?.minYearly ?? -1
+    const floor = (job: Job): number => job.salary?.minYearly ?? -1
+    return (a, b) => pay(b) - pay(a) || floor(b) - floor(a) || (b.postedAt ?? 0) - (a.postedAt ?? 0)
   }
   return (a, b) => popularityScore(b, now) - popularityScore(a, now)
 }
@@ -181,11 +204,28 @@ export interface FeedOutput {
  * are absolute), then keywords, then the sub-filters.
  */
 export function buildFeed(query: FeedQuery, settings: Settings, now = Date.now()): FeedOutput {
-  const pool = all().filter((job) => job.region === query.region)
   let removed = 0
 
   const keywords =
     query.useSavedKeywords && settings.keywordFilterEnabled ? settings.savedKeywords : query.keywords
+
+  /*
+    Which searches a listing has to have come from.
+
+    Cached jobs are kept for ever, so without this the home feed slowly became a
+    pile of everything ever searched: type "nurse", clear the box, and the feed was
+    still nursing jobs under all three filters because they were sitting in the
+    corpus and happened to be in the right region. Now the home feed shows the home
+    feed — the listings Indeed returns for the region with no search term — and a
+    search shows what that search returned.
+  */
+  const searchTerms = keywords.length > 0 ? keywords.map((k) => k.toLowerCase().trim()) : ['']
+  const fromRequestedSearch = (job: Job): boolean => {
+    const origins = (job.queries ?? [job.query]).map((q) => q.toLowerCase().trim())
+    return searchTerms.some((term) => origins.includes(term))
+  }
+
+  const pool = all().filter((job) => job.region === query.region)
 
   /*
     Counted separately so an empty feed can name the filter that emptied it.
@@ -200,7 +240,18 @@ export function buildFeed(query: FeedQuery, settings: Settings, now = Date.now()
       removed++
       return false
     }
-    if (!matchesAnyKeyword(job, keywords)) {
+    /*
+      With no search term this is the home feed, so only home-feed listings
+      qualify. With a search term, a listing qualifies if it came back from that
+      search *or* if its text matches — the second half is what lets cached
+      results appear instantly while the fresh search is still loading.
+    */
+    if (keywords.length === 0) {
+      if (!fromRequestedSearch(job)) {
+        removed++
+        return false
+      }
+    } else if (!fromRequestedSearch(job) && !matchesAnyKeyword(job, keywords)) {
       removed++
       return false
     }
@@ -214,8 +265,8 @@ export function buildFeed(query: FeedQuery, settings: Settings, now = Date.now()
       return false
     }
 
-    // Recent and Top are both defined as "the last 10 days".
-    if (query.filter !== 'paid' && job.postedAt && now - job.postedAt > 10 * DAY_MS) {
+    // All three filters look back a full 30 days.
+    if (job.postedAt && now - job.postedAt > LOOKBACK_DAYS * DAY_MS) {
       removed++
       return false
     }

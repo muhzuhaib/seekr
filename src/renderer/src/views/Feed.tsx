@@ -11,7 +11,8 @@ import {
   SearchX,
   ShieldCheck,
   Wallet,
-  Wifi
+  Wifi,
+  X
 } from 'lucide-react'
 import type {
   AuthState,
@@ -19,12 +20,11 @@ import type {
   FeedQuery,
   IngestStatus,
   Job,
-  LayoutMode,
   SalaryInsight,
   Settings,
   WorkMode
 } from '../../../shared/types'
-import { regionByCode } from '../../../shared/types'
+import { LAYOUTS, LOOKBACK_DAYS, regionByCode } from '../../../shared/types'
 import JobCard from './JobCard'
 import JobDetail from './JobDetail'
 
@@ -35,36 +35,24 @@ interface Props {
   onUpdateSettings: (patch: Partial<Settings>) => void
 }
 
-/*
-  BETA — feed width. The centred reading column leaves a lot of empty space on a
-  wide monitor, so this cycles through the three candidates in place. It's a
-  temporary control: once a winner is picked it moves into Settings → Appearance
-  and this button goes away.
-*/
-const LAYOUTS: { id: LayoutMode; label: string; hint: string }[] = [
-  { id: 'standard', label: 'Standard', hint: 'Centred reading column — the current look' },
-  { id: 'wide', label: 'Full width', hint: 'Cards stretch the whole window' },
-  { id: 'columns', label: 'Two columns', hint: 'Cards in a two-up grid' }
-]
-
 const FILTERS: { id: FeedFilter; label: string; icon: JSX.Element; hint: string }[] = [
   {
     id: 'recent',
     label: 'Recent',
     icon: <Clock3 size={14} />,
-    hint: 'Newest postings from the last 10 days. Always fetches fresh.'
+    hint: `Newest postings from the last ${LOOKBACK_DAYS} days. Always fetches fresh.`
   },
   {
     id: 'top',
     label: 'Top',
     icon: <Flame size={14} />,
-    hint: 'Most in-demand roles from the last 10 days (Seekr estimate).'
+    hint: `Most in-demand roles from the last ${LOOKBACK_DAYS} days (Seekr estimate).`
   },
   {
     id: 'paid',
     label: 'Highest paid',
     icon: <Wallet size={14} />,
-    hint: 'Sorted by salary, highest first.'
+    hint: `Best-paying roles from the last ${LOOKBACK_DAYS} days — highest salary first.`
   }
 ]
 
@@ -159,6 +147,12 @@ export default function Feed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, region.code, committedSearch])
 
+  /*
+    The remote check re-decides listings in the background — once it finds any, the
+    feed re-reads itself so the newly confirmed remote jobs simply appear.
+  */
+  useEffect(() => window.seekr.onCorpusChanged(() => void apply(false)), [apply])
+
   // Sub-filter changes are pure local re-filtering — no network, instant.
   useEffect(() => {
     void apply(false)
@@ -210,7 +204,15 @@ export default function Feed({
             className="input"
             placeholder="Search job titles…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              /*
+                Emptying the box means "take me back to the home feed" — it should
+                not need an Enter press. Without this the last search stayed
+                committed, and its results kept showing under all three filters.
+              */
+              if (e.target.value.trim() === '') setCommittedSearch('')
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') setCommittedSearch(search.trim())
               if (e.key === 'Escape') {
@@ -219,6 +221,18 @@ export default function Feed({
               }
             }}
           />
+          {search && (
+            <button
+              className="search-clear"
+              onClick={() => {
+                setSearch('')
+                setCommittedSearch('')
+              }}
+              data-tip="Clear the search and go back to the home feed"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
 
         <div className="spacer" />
@@ -278,18 +292,17 @@ export default function Feed({
 
         <div className="spacer" />
 
-        {/* BETA layout switch — temporary, see LAYOUTS above. */}
+        {/* Feed width. Also lives in Settings → Appearance. */}
         <button
-          className="chip beta"
+          className="chip"
           onClick={() => {
             const index = LAYOUTS.findIndex((l) => l.id === settings.layout)
             onUpdateSettings({ layout: LAYOUTS[(index + 1) % LAYOUTS.length].id })
           }}
-          data-tip={`${activeLayout.hint} — click to try the next layout (beta)`}
+          data-tip={`${activeLayout.hint} — click for the next layout`}
         >
           <Columns3 size={13} />
           {activeLayout.label}
-          <span className="beta-dot">beta</span>
         </button>
 
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-subtle)' }}>

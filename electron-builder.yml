@@ -9,7 +9,7 @@ files:
   - '!build/*'
   - '!release/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.gitignore,CLAUDE.md,tsconfig.json,electron-builder.yml}'
+  - '!{.gitignore,*.md,tsconfig.json,electron-builder.yml}'
 # Auto-update source. electron-builder writes this into the packaged app as
 # app-update.yml, which is what electron-updater reads at runtime — so this block
 # is the single place the update feed is defined.

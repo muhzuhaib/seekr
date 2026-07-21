@@ -11,6 +11,7 @@
 
 import { BrowserWindow, session } from 'electron'
 import type { FeedFilter, Job, Region } from '../shared/types'
+import { LOOKBACK_DAYS } from '../shared/types'
 import {
   buildAuthExtractor,
   buildDetailExtractor,
@@ -37,26 +38,32 @@ export const PARTITION = 'persist:indeed'
  * Do not "fix" this by inventing a UA again.
  */
 
-// Kept deliberately low. Every extra deep search URL is another chance of tripping
-// Indeed's bot check, and two pages already fill the feed.
-const PAGES_PER_FEED = 2
+// Pages walked per feed refresh. They are now fetched concurrently (the throttle
+// still paces them), so a deeper feed no longer costs proportionally more time.
+const PAGES_PER_FEED = 3
 const RESULTS_PER_PAGE = 15
-const LOOKBACK_DAYS = 10
 
-let worker: BrowserWindow | null = null
+/**
+ * Reader windows.
+ *
+ * There used to be exactly one, which meant every description the user opened
+ * queued behind whatever else was loading. The pool lets a few pages load at once
+ * — the throttle still decides how fast anything may start, so this widens the
+ * pipe without changing the pacing rules.
+ *
+ * Index 0 is the *primary*: search, the auth probe and the Cloudflare check all
+ * use it, so the one window the user ever sees is the one that gets challenged.
+ */
+const MAX_WINDOWS = 4
+const pool: BrowserWindow[] = []
+const busy = new Set<BrowserWindow>()
 
 export function indeedSession(): Electron.Session {
   return session.fromPartition(PARTITION)
 }
 
-/**
- * The offscreen window used for reading. Created lazily and kept alive between
- * fetches — spinning up Chromium per request would be both slow and rude.
- */
-function getWorker(): BrowserWindow {
-  if (worker && !worker.isDestroyed()) return worker
-
-  worker = new BrowserWindow({
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
     show: false,
     width: 1100,
     height: 860,
@@ -80,16 +87,65 @@ function getWorker(): BrowserWindow {
     }
   })
 
-  worker.on('closed', () => {
-    worker = null
+  win.on('closed', () => {
+    const i = pool.indexOf(win)
+    if (i >= 0) pool.splice(i, 1)
+    busy.delete(win)
   })
 
-  return worker
+  return win
+}
+
+/**
+ * The window the user might actually see: the one that shows the verification
+ * check, and the one search and the auth probe use.
+ */
+function getWorker(): BrowserWindow {
+  if (pool[0] && !pool[0].isDestroyed()) return pool[0]
+  const win = createWindow()
+  pool.unshift(win)
+  return win
+}
+
+/** A free reader window, growing the pool up to `MAX_WINDOWS` on demand. */
+function acquireWindow(preferPrimary: boolean): BrowserWindow {
+  if (preferPrimary) {
+    const primary = getWorker()
+    busy.add(primary)
+    return primary
+  }
+
+  for (const win of pool) {
+    if (!win.isDestroyed() && !busy.has(win)) {
+      busy.add(win)
+      return win
+    }
+  }
+
+  if (pool.length < MAX_WINDOWS) {
+    const win = createWindow()
+    pool.push(win)
+    busy.add(win)
+    return win
+  }
+
+  // Every window is busy — fall back to the primary rather than refusing work.
+  // The throttle caps concurrency below MAX_WINDOWS, so this is a safety net only.
+  const win = getWorker()
+  busy.add(win)
+  return win
+}
+
+function releaseWindow(win: BrowserWindow): void {
+  busy.delete(win)
 }
 
 export function destroyWorker(): void {
-  if (worker && !worker.isDestroyed()) worker.destroy()
-  worker = null
+  for (const win of [...pool]) {
+    if (!win.isDestroyed()) win.destroy()
+  }
+  pool.length = 0
+  busy.clear()
 }
 
 /** True while the user is being asked to clear a check, so we never stack windows. */
@@ -162,11 +218,21 @@ export function resolveChallengeInteractively(): Promise<boolean> {
 
 // ---------------------------------------------------------------- urls
 
+/**
+ * Indeed's own "Remote" refinement, as it appears in their URL when you tick the
+ * Remote box on the results page. Asking Indeed for remote jobs is far better than
+ * fetching a general feed and hoping our classifier rescues the remote ones — it
+ * is their structured data doing the filtering.
+ */
+const INDEED_REMOTE_REFINEMENT = 'attr(DSQF7)'
+
 export function buildSearchUrl(
   region: Region,
   query: string,
   filter: FeedFilter,
-  page: number
+  page: number,
+  /** Ask Indeed itself for remote-only results. */
+  remoteOnly = false
 ): string {
   const params = new URLSearchParams()
 
@@ -185,17 +251,11 @@ export function buildSearchUrl(
 
   // Indeed only offers date and relevance sorting. "Recent" maps to date; the other
   // two are ranked by Seekr after ingestion, since Indeed exposes neither a
-  // popularity figure nor a salary sort.
-  if (filter === 'recent') {
-    params.set('sort', 'date')
-    params.set('fromage', String(LOOKBACK_DAYS))
-  } else if (filter === 'top') {
-    params.set('sort', 'relevance')
-    params.set('fromage', String(LOOKBACK_DAYS))
-  } else {
-    params.set('sort', 'relevance')
-    params.set('fromage', '30')
-  }
+  // popularity figure nor a salary sort. All three now look back a full 30 days.
+  params.set('sort', filter === 'recent' ? 'date' : 'relevance')
+  params.set('fromage', String(LOOKBACK_DAYS))
+
+  if (remoteOnly) params.set('sc', `0kf:${INDEED_REMOTE_REFINEMENT};`)
 
   return `https://${region.domain}/jobs?${params.toString()}`
 }
@@ -262,14 +322,35 @@ function waitForPageSettled(wc: Electron.WebContents, ms: number): Promise<void>
   })
 }
 
+/**
+ * How long we keep re-reading a page that loaded but hasn't rendered its content
+ * yet. Indeed hydrates its cards client-side, so there is a window where the DOM
+ * is present but empty.
+ *
+ * This used to be a flat 600 ms sleep on *every* fetch, paid whether the page
+ * needed it or not. Polling instead means a page that is already complete is read
+ * immediately, and a slow one still gets more grace than it used to.
+ */
+const SETTLE_POLL_MS = 120
+const SETTLE_BUDGET_MS = 1200
+
+interface LoadOptions {
+  lane?: Lane
+  /** Use the window the user can be shown (search, auth, challenge). */
+  primary?: boolean
+  /** Returns true once the extraction is worth keeping, ending the poll early. */
+  isComplete?: (result: ExtractionResult) => boolean
+}
+
 async function loadAndExtract(
   url: string,
   extractor: string,
-  /** 'interactive' when the user is watching a spinner for this exact page. */
-  lane: Lane = 'background'
+  options: LoadOptions = {}
 ): Promise<ExtractionResult> {
+  const { lane = 'background', primary = false, isComplete } = options
+
   return schedule(async () => {
-    const win = getWorker()
+    const win = acquireWindow(primary)
     const wc = win.webContents
 
     // `did-navigate` carries the HTTP status, which is how we tell a real page from
@@ -290,14 +371,26 @@ async function loadAndExtract(
 
       await waitForPageSettled(wc, NAV_TIMEOUT_MS)
 
-      // Give client-rendered cards a beat to mount before reading the DOM.
-      await new Promise((r) => setTimeout(r, 600))
-
-      const result = (await withTimeout(
+      /*
+        Read straight away, then keep re-reading only while the page still has
+        nothing for us. Most pages answer on the first attempt, which is where the
+        old flat 600 ms sleep went from "safe" to "pure latency".
+      */
+      const deadline = Date.now() + SETTLE_BUDGET_MS
+      let result = (await withTimeout(
         wc.executeJavaScript(extractor, true),
         EXTRACT_TIMEOUT_MS,
         'extraction timed out'
       )) as ExtractionResult
+
+      while (!result.challenged && isComplete && !isComplete(result) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, SETTLE_POLL_MS))
+        result = (await withTimeout(
+          wc.executeJavaScript(extractor, true),
+          EXTRACT_TIMEOUT_MS,
+          'extraction timed out'
+        )) as ExtractionResult
+      }
 
       if (result.challenged) {
         penalise()
@@ -313,6 +406,7 @@ async function loadAndExtract(
       return result
     } finally {
       wc.removeListener('did-navigate', onNavigate)
+      releaseWindow(win)
     }
   }, lane)
 }
@@ -323,6 +417,8 @@ export interface IngestOptions {
   query: string
   filter: FeedFilter
   pages?: number
+  /** Ask Indeed for remote-only results, using its own refinement. */
+  remoteOnly?: boolean
   onProgress?: (done: number, total: number) => void
   /** Fired when we're about to ask the user to clear a verification check. */
   onChallenge?: () => void
@@ -341,68 +437,96 @@ export interface IngestOutcome {
  * throwing away good data.
  */
 export async function ingestFeed(options: IngestOptions): Promise<IngestOutcome> {
-  const { region, query, filter, pages = PAGES_PER_FEED, onProgress } = options
+  const { region, query, filter, pages = PAGES_PER_FEED, remoteOnly = false, onProgress } = options
   const extractor = buildSearchExtractor()
+
+  /** A results page is worth reading the moment it actually has cards on it. */
+  const hasCards = (r: ExtractionResult): boolean => r.jobs.length > 0
 
   const jobs: Job[] = []
   const seen = new Set<string>()
   let warning: string | null = null
   let healthSum = 0
   let healthCount = 0
+  let done = 0
 
-  /** Set once the user has already been asked this run — never nag twice. */
-  let promptedForChallenge = false
-
-  for (let page = 0; page < pages; page++) {
-    const url = buildSearchUrl(region, query, filter, page)
-
-    try {
-      let result: ExtractionResult
-      try {
-        result = await loadAndExtract(url, extractor)
-      } catch (err) {
-        // A challenge is recoverable: show the window, let the user clear it, and
-        // retry this same page once. Anything else propagates.
-        if (!(err instanceof BotChallengeError) || promptedForChallenge) throw err
-        promptedForChallenge = true
-
-        options.onChallenge?.()
-        const cleared = await resolveChallengeInteractively()
-        if (!cleared) throw err
-
-        // The check is passed, so the back-off it earned no longer applies.
-        reward()
-        result = await loadAndExtract(url, extractor)
-      }
-      healthSum += result.health
-      healthCount++
-
-      for (const raw of result.jobs) {
-        if (seen.has(raw.id)) continue
-        seen.add(raw.id)
-        // Rank is per-page; make it global so the "top jobs" score is comparable.
-        raw.rank += page * RESULTS_PER_PAGE
-        jobs.push(normaliseJob(raw, region.code, region.currency, query))
-      }
-
-      onProgress?.(page + 1, pages)
-
-      // No results on an early page means there is nothing more to walk.
-      if (result.jobs.length === 0) break
-    } catch (err) {
-      if (err instanceof BotChallengeError) {
-        warning =
-          "Indeed's verification check wasn't completed, so no new listings could be loaded. Press Refresh to try again — the check opens in a window, and once you pass it Seekr carries on from where it stopped."
-        break
-      }
-      if (err instanceof RateLimitedError) {
-        const mins = Math.ceil(err.waitMs / 60_000)
-        warning = `Indeed asked Seekr to slow down. Pausing for about ${mins} minute${mins === 1 ? '' : 's'}.`
-        break
-      }
-      warning = `Could not load results: ${(err as Error).message}`
-      break
+  const collect = (result: ExtractionResult, page: number): void => {
+    healthSum += result.health
+    healthCount++
+    for (const raw of result.jobs) {
+      if (seen.has(raw.id)) continue
+      seen.add(raw.id)
+      // Rank is per-page; make it global so the "top jobs" score is comparable.
+      raw.rank += page * RESULTS_PER_PAGE
+      jobs.push(normaliseJob(raw, region.code, region.currency, query, Date.now(), remoteOnly))
     }
+    onProgress?.(++done, pages)
+  }
+
+  const describe = (err: unknown): string => {
+    if (err instanceof BotChallengeError) {
+      return "Indeed's verification check wasn't completed, so no new listings could be loaded. Press Refresh to try again — the check opens in a window, and once you pass it Seekr carries on from where it stopped."
+    }
+    if (err instanceof RateLimitedError) {
+      const mins = Math.ceil(err.waitMs / 60_000)
+      return `Indeed asked Seekr to slow down. Pausing for about ${mins} minute${mins === 1 ? '' : 's'}.`
+    }
+    return `Could not load results: ${(err as Error).message}`
+  }
+
+  /*
+    Page 1 goes first and alone, in the window the user can be shown. If Indeed
+    challenges, this is where it happens, and clearing it once covers the rest —
+    firing all the pages at once would have popped the check mid-flight with two
+    other requests already in the air.
+  */
+  try {
+    const firstUrl = buildSearchUrl(region, query, filter, 0, remoteOnly)
+    const firstOptions = { lane: 'interactive' as const, primary: true, isComplete: hasCards }
+
+    let first: ExtractionResult
+    try {
+      first = await loadAndExtract(firstUrl, extractor, firstOptions)
+    } catch (err) {
+      if (!(err instanceof BotChallengeError)) throw err
+
+      options.onChallenge?.()
+      const cleared = await resolveChallengeInteractively()
+      if (!cleared) throw err
+
+      // The check is passed, so the back-off it earned no longer applies.
+      reward()
+      first = await loadAndExtract(firstUrl, extractor, firstOptions)
+    }
+    collect(first, 0)
+
+    /*
+      The remaining pages go out together. They are still paced by the throttle —
+      it just no longer insists on a full 2.5 s of dead time between pages the
+      user is sitting and waiting for.
+    */
+    if (first.jobs.length > 0 && pages > 1) {
+      const rest = await Promise.allSettled(
+        Array.from({ length: pages - 1 }, (_, i) => i + 1).map(async (page) => ({
+          page,
+          result: await loadAndExtract(
+            buildSearchUrl(region, query, filter, page, remoteOnly),
+            extractor,
+            { lane: 'interactive' as const, isComplete: hasCards }
+          )
+        }))
+      )
+
+      for (const outcome of rest) {
+        if (outcome.status === 'fulfilled') collect(outcome.value.result, outcome.value.page)
+        else if (!warning) warning = describe(outcome.reason)
+      }
+
+      // A deep page failing while page 1 worked is not worth alarming anyone about.
+      if (jobs.length > 0) warning = null
+    }
+  } catch (err) {
+    warning = describe(err)
   }
 
   const health = healthCount ? healthSum / healthCount : 0
@@ -434,7 +558,11 @@ export async function fetchJobDetail(
   lane: Lane = 'interactive'
 ): Promise<JobDetail | null> {
   try {
-    const result = (await loadAndExtract(url, buildDetailExtractor(), lane)) as unknown as {
+    const result = (await loadAndExtract(url, buildDetailExtractor(), {
+      lane,
+      // A description page is done the moment the description element has text.
+      isComplete: (r) => !!(r as unknown as { description?: string | null }).description
+    })) as unknown as {
       challenged?: boolean
       description?: string | null
       salaryText?: string | null
@@ -459,10 +587,9 @@ export async function fetchJobDetail(
  */
 export async function probeAuth(region: Region): Promise<{ loggedIn: boolean; email: string | null }> {
   try {
-    const result = (await loadAndExtract(
-      `https://${region.domain}/`,
-      buildAuthExtractor()
-    )) as unknown as { loggedIn: boolean; email: string | null }
+    const result = (await loadAndExtract(`https://${region.domain}/`, buildAuthExtractor(), {
+      primary: true
+    })) as unknown as { loggedIn: boolean; email: string | null }
     return { loggedIn: !!result.loggedIn, email: result.email ?? null }
   } catch {
     return { loggedIn: false, email: null }

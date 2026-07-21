@@ -11,13 +11,22 @@
   --font-ui: 'Inter', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
 
+  /*
+    Type ramp. Deliberately narrow: four sizes carry the whole app, and hierarchy
+    comes from weight and colour rather than from a dozen font sizes, which is what
+    makes a dense list of jobs read calmly.
+  */
   --text-xs: 11.5px;
   --text-sm: 12.5px;
   --text-base: 14px;
   --text-md: 15px;
   --text-lg: 18px;
-  --text-xl: 22px;
-  --text-2xl: 28px;
+  --text-xl: 23px;
+  --text-2xl: 30px;
+
+  /* Headings tighten as they grow, the way good print sets type. */
+  --track-tight: -0.011em;
+  --track-tighter: -0.021em;
 
   /* A 4px spacing scale. Every gap and pad in the app comes from here. */
   --s1: 4px;
@@ -30,13 +39,13 @@
   --s10: 40px;
   --s12: 48px;
 
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 20px;
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 16px;
+  --r-xl: 22px;
   --r-full: 999px;
 
-  --read-width: 780px;
+  --read-width: 800px;
   --rail-width: 68px;
   --titlebar-height: 44px;
   /* Width reserved for the OS window controls overlaying the frameless titlebar. */
@@ -55,19 +64,24 @@
 
 :root,
 :root[data-theme='dark'] {
-  --bg: #0b0d10;
-  --bg-raised: #121519;
-  --bg-panel: #15191e;
-  --bg-hover: #1b2027;
-  --bg-active: #222831;
-  --bg-input: #0f1216;
+  /*
+    Surfaces sit closer together than they used to. Strong steps between panels
+    made the app look built out of boxes; a quiet gradient of near-blacks lets the
+    content — job titles, salaries — supply the contrast instead.
+  */
+  --bg: #0a0c0f;
+  --bg-raised: #101318;
+  --bg-panel: #14181e;
+  --bg-hover: #191e25;
+  --bg-active: #20262f;
+  --bg-input: #0d1014;
 
-  --fg: #e8ecf1;
-  --fg-muted: #aeb9c8;
-  --fg-subtle: #8592a3;
+  --fg: #e9edf3;
+  --fg-muted: #a8b3c2;
+  --fg-subtle: #7f8b9c;
 
-  --border: #232931;
-  --border-strong: #2f3742;
+  --border: #1c222a;
+  --border-strong: #2b333d;
 
   --good: #3fb950;
   --warn: #d29922;
@@ -93,19 +107,19 @@
 /* ----------------------------------------------------------------- light */
 
 :root[data-theme='light'] {
-  --bg: #fbfcfd;
+  --bg: #f7f8fa;
   --bg-raised: #ffffff;
   --bg-panel: #ffffff;
-  --bg-hover: #f1f4f7;
-  --bg-active: #e6ebf1;
+  --bg-hover: #f1f4f8;
+  --bg-active: #e8edf3;
   --bg-input: #ffffff;
 
-  --fg: #10151c;
-  --fg-muted: #5a6674;
-  --fg-subtle: #8b95a3;
+  --fg: #0d1219;
+  --fg-muted: #56626f;
+  --fg-subtle: #8792a0;
 
-  --border: #e3e8ee;
-  --border-strong: #cdd5df;
+  --border: #e7ebf1;
+  --border-strong: #d2d9e2;
 
   --good: #1a7f37;
   --warn: #9a6700;
@@ -374,6 +388,13 @@ select {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /*
+    Reserve the scrollbar on both sides, so the centred reading column sits in the
+    middle of the *window* rather than the middle of the window-minus-scrollbar.
+    Without it the cards sat 5px left of the toolbar above them — small, but it is
+    exactly the kind of misalignment you feel without being able to name.
+  */
+  scrollbar-gutter: stable both-edges;
 }
 
 .reader {
@@ -401,12 +422,13 @@ select {
   max-width: 1100px;
 }
 
-/* Segmented control — the three feed filters. */
+/* Segmented control — the three feed filters. A single pill rather than a row of
+   bordered buttons: fewer lines on screen, and the selection reads instantly. */
 .segmented {
   display: inline-flex;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--r-full);
   padding: 3px;
   gap: 2px;
 }
@@ -414,8 +436,8 @@ select {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: 6px var(--s3);
-  border-radius: 7px;
+  padding: 6px var(--s4);
+  border-radius: var(--r-full);
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--fg-muted);
@@ -424,6 +446,7 @@ select {
 }
 .segmented button:hover {
   color: var(--fg);
+  background: var(--bg-hover);
 }
 .segmented button.active {
   background: var(--bg-active);
@@ -436,7 +459,7 @@ select {
   align-items: center;
   gap: 6px;
   height: 32px;
-  padding: 0 var(--s3);
+  padding: 0 var(--s4);
   border-radius: var(--r-full);
   border: 1px solid var(--border);
   background: var(--bg-raised);
@@ -444,10 +467,11 @@ select {
   font-size: var(--text-sm);
   font-weight: 500;
   white-space: nowrap;
-  transition: all var(--fast);
+  transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .chip:hover {
   color: var(--fg);
+  background: var(--bg-hover);
   border-color: var(--border-strong);
 }
 .chip.on {
@@ -465,25 +489,31 @@ select {
 .job-list {
   display: flex;
   flex-direction: column;
-  gap: var(--s3);
+  gap: var(--s2);
 }
 
 .job-card {
+  position: relative;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   padding: var(--s4) var(--s5);
   cursor: pointer;
   transition: border-color var(--fast), background var(--fast), transform var(--fast),
-    opacity var(--normal);
+    box-shadow var(--fast), opacity var(--normal);
   animation: rise 260ms var(--ease) both;
 }
+/* A card lifts very slightly under the pointer — enough to feel live, not enough
+   to make a scrolling list jump about. */
 .job-card:hover {
   border-color: var(--border-strong);
   background: var(--bg-panel);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 .job-card:active {
-  transform: scale(0.997);
+  transform: translateY(0) scale(0.998);
+  box-shadow: none;
 }
 .job-card.selected {
   border-color: var(--accent);
@@ -519,7 +549,7 @@ select {
   font-size: var(--text-md);
   font-weight: 600;
   line-height: 1.35;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--track-tight);
 }
 .job-company {
   color: var(--fg-muted);
@@ -583,8 +613,8 @@ select {
   align-items: center;
   gap: 4px;
   height: 22px;
-  padding: 0 8px;
-  border-radius: var(--r-sm);
+  padding: 0 9px;
+  border-radius: var(--r-full);
   font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -728,19 +758,44 @@ select {
   position: relative;
   flex: 1;
   min-width: 180px;
-  max-width: 340px;
+  max-width: 360px;
 }
-.search svg {
+.search > svg {
   position: absolute;
-  left: 10px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--fg-subtle);
   pointer-events: none;
 }
 .search .input {
-  padding-left: 32px;
-  height: 32px;
+  padding-left: 34px;
+  padding-right: 30px;
+  height: 34px;
+  border-radius: var(--r-full);
+  background: var(--bg-raised);
+}
+
+/*
+  Clear button. Emptying the box is how you get back to the home feed, so it needs
+  to be one obvious click rather than a select-all-and-delete.
+*/
+.search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--fg-subtle);
+  transition: color var(--fast), background var(--fast);
+}
+.search-clear:hover {
+  color: var(--fg);
+  background: var(--bg-active);
 }
 
 /* Switch. */
@@ -1374,15 +1429,41 @@ select {
   align-items: start;
 }
 
-/* The beta marker on the layout switch, so it never reads as a settled feature. */
-.chip .beta-dot {
-  margin-left: 2px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: color-mix(in srgb, var(--warn) 22%, transparent);
-  color: var(--warn);
+/* ------------------------------------------------------------ modern polish
+   Small refinements applied last, so they win over the component rules above
+   without those rules having to be rewritten. */
+
+/* Headings tighten as they grow. */
+.modal-title,
+.detail-title,
+.onboard h1 {
+  letter-spacing: var(--track-tighter);
+}
+
+/*
+  A hairline under the toolbar. The feed used to float in an undivided expanse;
+  one 1px rule separates "controls" from "results" without adding a box, and the
+  controls are padded to line up with the cards below them.
+*/
+.toolbar {
+  padding-bottom: var(--s3);
+  margin-bottom: var(--s3);
+  border-bottom: 1px solid var(--border);
+  max-width: none;
+  padding-left: max(var(--s6), calc((100% - var(--read-width)) / 2 + var(--s6)));
+  padding-right: max(var(--s6), calc((100% - var(--read-width)) / 2 + var(--s6)));
+}
+/* Full-width layouts run the controls to the edges, like the cards under them. */
+.toolbar.layout-wide,
+.toolbar.layout-columns {
+  padding-left: var(--s6);
+  padding-right: var(--s6);
+}
+
+.banner {
+  border-radius: var(--r-lg);
+}
+
+.empty-icon {
+  border-radius: var(--r-full);
 }

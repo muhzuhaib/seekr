@@ -17,7 +17,7 @@ import {
   X
 } from 'lucide-react'
 import type { AuthState, Resume, Settings, ThemeMode, UpdateStatus } from '../../../shared/types'
-import { MAX_RESUMES, REGIONS } from '../../../shared/types'
+import { LAYOUTS, MAX_RESUMES, REGIONS } from '../../../shared/types'
 import { fileSize } from '../lib/format'
 
 interface Props {
@@ -284,6 +284,26 @@ function Appearance({
               onClick={() => onUpdate({ accent: colour })}
               data-tip={colour}
             />
+          ))}
+        </div>
+      </Field>
+
+      {/* Also switchable straight from the feed toolbar, which is where it lives
+          day to day — this is the same setting, spelled out. */}
+      <Field
+        label="Feed width"
+        hint="How the job list uses the window. The same switch sits in the feed toolbar."
+      >
+        <div className="segmented">
+          {LAYOUTS.map((layout) => (
+            <button
+              key={layout.id}
+              className={settings.layout === layout.id ? 'active' : ''}
+              onClick={() => onUpdate({ layout: layout.id })}
+              data-tip={layout.hint}
+            >
+              {layout.label}
+            </button>
           ))}
         </div>
       </Field>

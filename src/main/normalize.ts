@@ -41,6 +41,25 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   'S$': 'SGD'
 }
 
+/**
+ * The point past which an "an hour" figure is certainly a mislabelled yearly
+ * salary, per currency. Roughly "ten times the highest real hourly rate anyone
+ * advertises", so it never touches a genuine consultant day-rate.
+ */
+const HOURLY_CEILING: Record<string, number> = {
+  USD: 2000,
+  GBP: 2000,
+  EUR: 2000,
+  CAD: 2500,
+  AUD: 2500,
+  SGD: 2500,
+  AED: 8000,
+  ZAR: 40_000,
+  INR: 200_000,
+  PKR: 600_000,
+  DEFAULT: 2000
+}
+
 function toYearly(amount: number, period: Salary['period']): number {
   switch (period) {
     case 'hour':
@@ -80,12 +99,36 @@ export function parseSalary(raw: string | null, fallbackCurrency: string): Salar
   }
 
   let currency = fallbackCurrency
+  let sawCurrency = false
   for (const [symbol, code] of Object.entries(CURRENCY_SYMBOLS)) {
-    if (text.includes(symbol)) {
+    /*
+      Letter-based symbols ("R", "Rs", "AED") only count when a number follows.
+      Plain `includes` meant the R in "Read what people are saying" registered as
+      South African rand, which was half of why a company's review blurb parsed as
+      a salary at all.
+    */
+    const found = /^[A-Za-z]/.test(symbol)
+      ? new RegExp(`\\b${symbol}\\s*\\.?\\s*\\d`, 'i').test(text)
+      : text.includes(symbol)
+    if (found) {
       currency = code
+      sawCurrency = true
       break
     }
   }
+
+  /*
+    A string is only a salary if it says so.
+
+    The detail page's salary block sometimes falls back to a company card —
+    "David Lloyd Clubs1,175 reviews…" — and the bare number in it used to parse as
+    £305,500, which then sat proudly at the top of Highest paid. Requiring either a
+    currency or a stated period throws that class of thing out, and Indeed always
+    prints at least one of the two on a real figure.
+  */
+  if (!sawCurrency && period === 'unknown') return null
+  // No word boundaries: the source text runs words together ("1,175 reviewsRead").
+  if (/review|rating|applicant/i.test(text)) return null
 
   // Grab numbers, tolerating thousands separators and "45k" shorthand.
   const numbers: number[] = []
@@ -112,7 +155,22 @@ export function parseSalary(raw: string | null, fallbackCurrency: string): Salar
     else period = 'year'
   }
 
+  /*
+    Sanity, in that same spirit: some listings *state* a unit that cannot be right
+    — "£31,000 - £35,000 an hour" is a yearly salary with the wrong box ticked, and
+    left alone it multiplies to £72m and owns the top of Highest paid for ever.
+
+    The ceiling has to be per-currency, or the fix breaks the currencies it was
+    never about: PKR 5,000 an hour is an ordinary rate, £5,000 an hour is not.
+  */
+  const ceiling = HOURLY_CEILING[currency] ?? HOURLY_CEILING.DEFAULT
+  if (period === 'hour' && numbers[0] >= ceiling) period = 'year'
+  else if (period === 'day' && numbers[0] >= ceiling * 10) period = 'year'
+
   const yearly = numbers.map((n) => Math.round(toYearly(n, period))).sort((a, b) => a - b)
+
+  // "£0" is not pay. Treat it as no salary rather than sorting it below everything.
+  if ((yearly[yearly.length - 1] ?? 0) <= 0) return null
 
   return {
     minYearly: yearly[0] ?? null,
@@ -241,6 +299,54 @@ export function classifyWorkMode(
   const negatives: string[] = []
 
   /*
+    THE most trustworthy signal there is: the structured line Indeed appends to the
+    bottom of a description — "Job Location: Remote", "Work Location: In person",
+    "Work Location: Hybrid remote in Lahore". The employer filled that field in on a
+    form; everything else in the body is marketing prose. It is checked before even
+    Indeed's own work model, because it comes from the job page itself rather than
+    from the search index, and it is the difference between a genuinely remote job
+    being shown and being silently filtered away.
+  */
+  const workLocation = body.match(WORK_LOCATION_FIELD)?.[1]?.trim()
+  if (workLocation) {
+    if (/hybrid/i.test(workLocation)) {
+      return {
+        mode: 'hybrid',
+        confidence: 0.95,
+        positives: ['the listing states a hybrid work location'],
+        negatives: []
+      }
+    }
+    if (/\bin[-\s]?person\b|\bon[-\s]?site\b|\bonsite\b/i.test(workLocation)) {
+      return {
+        mode: 'onsite',
+        confidence: 0.95,
+        positives: [],
+        negatives: ['the listing states the work location is in person']
+      }
+    }
+    // "Remote", "Remote in Pakistan", "Fully remote" — but not "Remote in Lahore,
+    // Punjab", which the concrete-place test below would rightly distrust.
+    if (/\bremote\b/i.test(workLocation) && !LOCATION_CONCRETE.test(workLocation)) {
+      return {
+        mode: 'remote',
+        confidence: 1,
+        positives: [`the listing states “Job Location: ${workLocation}”`],
+        negatives: []
+      }
+    }
+    // A bare place name — "Job Location: Lahore" — is the employer saying on-site.
+    if (LOCATION_CONCRETE.test(workLocation) || /^[A-Za-z .'-]{3,}$/.test(workLocation)) {
+      return {
+        mode: 'onsite',
+        confidence: 0.9,
+        positives: [],
+        negatives: [`the listing gives a physical job location (${workLocation})`]
+      }
+    }
+  }
+
+  /*
     Indeed publishes an explicit work model on most listings. It comes from
     structured employer input rather than marketing prose, so when it exists it
     settles the question and the text heuristics below are only a fallback.
@@ -269,41 +375,6 @@ export function classifyWorkMode(
         mode: 'remote',
         confidence: 0.95,
         positives: ['Indeed lists this as a remote role'],
-        negatives: []
-      }
-    }
-  }
-
-  /*
-    Next most trustworthy: the structured "Work Location:" line Indeed appends to
-    the description. Same reasoning as the work model above — it is a filled-in
-    field, not prose — so it also settles the question rather than merely scoring.
-  */
-  const workLocation = body.match(WORK_LOCATION_FIELD)?.[1]?.trim()
-  if (workLocation) {
-    if (/hybrid/i.test(workLocation)) {
-      return {
-        mode: 'hybrid',
-        confidence: 0.9,
-        positives: ['listing states a hybrid work location'],
-        negatives: []
-      }
-    }
-    if (/\bin[-\s]?person\b|\bon[-\s]?site\b|\bonsite\b/i.test(workLocation)) {
-      return {
-        mode: 'onsite',
-        confidence: 0.9,
-        positives: [],
-        negatives: ['listing states the work location is in person']
-      }
-    }
-    // "Remote", "Remote in Pakistan", "Fully remote" — but not "Remote in Lahore,
-    // Punjab", which the concrete-place test below would rightly distrust.
-    if (/\bremote\b/i.test(workLocation) && !LOCATION_CONCRETE.test(workLocation)) {
-      return {
-        mode: 'remote',
-        confidence: 0.92,
-        positives: ['listing states "Work Location: Remote"'],
         negatives: []
       }
     }
@@ -419,10 +490,18 @@ export function normaliseJob(
   region: string,
   currency: string,
   query: string,
-  now = Date.now()
+  now = Date.now(),
+  /**
+   * True when this came back from a search that asked Indeed for remote roles
+   * specifically. Indeed's own refinement is structured data, so it counts as a
+   * work model — and, like any work model, a "Job Location:" line on the real job
+   * page still overrides it once we fetch the description.
+   */
+  fromRemoteSearch = false
 ): Job {
   const { postedAt, approximate } = resolvePostedAt(raw.postedRelative, raw.postedEpoch, now)
   const body = `${raw.snippet ?? ''}\n${raw.description ?? ''}`
+  const remoteModel = raw.remoteModel ?? (fromRemoteSearch ? 'REMOTE' : null)
 
   return {
     id: raw.id,
@@ -434,15 +513,18 @@ export function normaliseJob(
     postedAt,
     postedAtApproximate: approximate,
     salary: parseSalary(raw.salaryText, currency),
-    workMode: classifyWorkMode(raw.title, raw.location, body, raw.remoteFlag, raw.remoteModel),
+    workMode: classifyWorkMode(raw.title, raw.location, body, raw.remoteFlag, remoteModel),
     snippet: raw.snippet ?? '',
     description: raw.description ?? null,
     rank: raw.rank,
     promoted: raw.promoted,
     urgentlyHiring: raw.urgentlyHiring,
     applicantHint: raw.applicantHint,
+    remoteFlag: raw.remoteFlag,
+    remoteModel,
     region,
     query,
+    queries: [query],
     fetchedAt: now
   }
 }
