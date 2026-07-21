@@ -508,6 +508,7 @@ export function normaliseJob(
     title: raw.title,
     company: raw.company,
     companyId: raw.companyId,
+    companyRating: raw.companyRating,
     location: raw.location,
     url: raw.url,
     postedAt,

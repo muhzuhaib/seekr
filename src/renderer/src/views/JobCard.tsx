@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { Job, SalaryInsight } from '../../../shared/types'
 import { isStale, publishedShort, salaryLabel, workModeLabel } from '../lib/format'
+import Rating from './Rating'
 
 interface Props {
   job: Job
@@ -82,7 +83,8 @@ export default function JobCard({
           <h3 className="job-title">{job.title}</h3>
           <div className="job-company">
             <Building2 size={13} />
-            {job.company || 'Unnamed company'}
+            <span className="truncate">{job.company || 'Unnamed company'}</span>
+            <Rating value={job.companyRating} />
           </div>
         </div>
 

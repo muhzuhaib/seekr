@@ -87,6 +87,8 @@
   --warn: #d29922;
   --bad: #f85149;
   --info: #58a6ff;
+  /* Company ratings. Warm gold reads as a star everywhere in the world. */
+  --star: #e3b341;
 
   /*
     Accent text on a dark background.
@@ -125,6 +127,8 @@
   --warn: #9a6700;
   --bad: #cf222e;
   --info: #0969da;
+  /* Darker on white, so the number stays legible rather than glowing. */
+  --star: #a06800;
 
   /* On a light background the chosen accent is already legible as text. */
   --accent-text: var(--accent);
@@ -133,6 +137,112 @@
   --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.09);
   --shadow-lg: 0 24px 64px rgba(16, 24, 40, 0.14);
   --overlay: rgba(16, 24, 40, 0.32);
+}
+
+/* ================================================================ palettes
+
+   A palette changes the *material* the app is made of — surfaces, hairlines and
+   text — while light/dark stays a separate choice and the accent picker keeps
+   working on top of whichever one is active.
+
+   Each block therefore only redefines the surface family. Everything else, from
+   the accent-text formula to the status colours, is inherited from the dark or
+   light block above, so a new palette can never fall out of step with the rest of
+   the design system.
+   ========================================================================== */
+
+/* Graphite — neutral charcoal, no colour cast whatsoever. */
+:root[data-theme='dark'][data-palette='graphite'] {
+  --bg: #1e1e1e;
+  --bg-raised: #252525;
+  --bg-panel: #2a2a2a;
+  --bg-hover: #303030;
+  --bg-active: #383838;
+  --bg-input: #1a1a1a;
+
+  --fg: #ededed;
+  --fg-muted: #b0b0b0;
+  --fg-subtle: #8a8a8a;
+
+  --border: #333333;
+  --border-strong: #454545;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.62);
+}
+
+/* Ink — true black, for OLED and for maximum contrast. Hairlines carry the
+   structure here, since there is no lighter surface to lean on. */
+:root[data-theme='dark'][data-palette='ink'] {
+  --bg: #000000;
+  --bg-raised: #0b0b0d;
+  --bg-panel: #101014;
+  --bg-hover: #17171c;
+  --bg-active: #1f1f26;
+  --bg-input: #08080a;
+
+  --fg: #f2f3f5;
+  --fg-muted: #a9adb6;
+  --fg-subtle: #7d828c;
+
+  --border: #1b1b21;
+  --border-strong: #2c2c35;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.7);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.75);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.85);
+}
+
+/* Nocturne — warm near-black. The brown cast takes the edge off at night. */
+:root[data-theme='dark'][data-palette='nocturne'] {
+  --bg: #14110f;
+  --bg-raised: #1b1815;
+  --bg-panel: #211d1a;
+  --bg-hover: #282320;
+  --bg-active: #322c27;
+  --bg-input: #110f0d;
+
+  --fg: #f0eae4;
+  --fg-muted: #b9aea4;
+  --fg-subtle: #8f857b;
+
+  --border: #2a241f;
+  --border-strong: #3b332c;
+}
+
+/* Linen — warm off-white, the paper equivalent of Nocturne. */
+:root[data-theme='light'][data-palette='linen'] {
+  --bg: #f6f3ee;
+  --bg-raised: #fffdf9;
+  --bg-panel: #fffdf9;
+  --bg-hover: #f1ece4;
+  --bg-active: #e8e1d6;
+  --bg-input: #fffdf9;
+
+  --fg: #1b1713;
+  --fg-muted: #605850;
+  --fg-subtle: #918779;
+
+  --border: #e7e0d5;
+  --border-strong: #d3c9ba;
+}
+
+/* Mist — cool grey-blue, a calmer light than plain white. */
+:root[data-theme='light'][data-palette='mist'] {
+  --bg: #eef1f6;
+  --bg-raised: #fbfcfe;
+  --bg-panel: #ffffff;
+  --bg-hover: #e6ebf3;
+  --bg-active: #dbe2ec;
+  --bg-input: #ffffff;
+
+  --fg: #0f1620;
+  --fg-muted: #515f70;
+  --fg-subtle: #808d9e;
+
+  --border: #dde3ec;
+  --border-strong: #c5cedb;
 }
 
 /* ------------------------------------------------------------------ base */
@@ -558,6 +668,35 @@ select {
   align-items: center;
   gap: 6px;
   margin-top: 2px;
+  min-width: 0;
+}
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+  Company rating. A star and a number, nothing more — the review count would double
+  the width of the line to say something you don't read. Amber rather than the
+  accent, because it is a property of the company, not of Seekr's own interface.
+*/
+.rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 7px 1px 5px;
+  border-radius: var(--r-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--star);
+  background: color-mix(in srgb, var(--star) 14%, transparent);
+  line-height: 1.5;
+}
+.rating svg {
+  margin-top: -1px;
 }
 
 /* Bookmark toggle on a job card. Subtle until hovered or active. */
@@ -1063,6 +1202,65 @@ select {
 .pill button:hover {
   background: var(--bad);
   color: #fff;
+}
+
+/*
+  Theme picker. Each card shows the palette itself — page colour, panel colour and
+  the current accent — because a colour is the only honest label for a colour.
+*/
+.themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.theme-card {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 5px var(--s3) 5px 5px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: color var(--fast), border-color var(--fast), background var(--fast);
+}
+.theme-card:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.theme-card.active {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
+}
+.theme-swatch {
+  position: relative;
+  width: 30px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  border: 1px solid;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+/* The panel tone, as a card sitting on the page colour. */
+.theme-swatch span:first-child {
+  position: absolute;
+  left: 4px;
+  top: 5px;
+  right: 4px;
+  bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+/* And a dot of the live accent, so the preview matches what you'd actually see. */
+.theme-swatch span:last-child {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 
 .swatches {

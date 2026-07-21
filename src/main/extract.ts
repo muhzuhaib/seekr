@@ -15,6 +15,11 @@ export interface RawJob {
   title: string
   company: string
   companyId: string | null
+  /**
+   * The company's Indeed star rating, 0–5. Null when they have none — plenty of
+   * small employers don't, and an empty star row would be worse than no row.
+   */
+  companyRating: number | null
   location: string
   url: string
   salaryText: string | null
@@ -154,6 +159,9 @@ export function buildSearchExtractor(): string {
         title: r.displayTitle || r.title || '',
         company: r.company || r.truncatedCompany || '',
         companyId: r.companyIdEncrypted || r.companyOverviewLink || null,
+        // Indeed sends 0 for "no rating", which must not render as a 0-star company.
+        companyRating:
+          typeof r.companyRating === 'number' && r.companyRating > 0 ? r.companyRating : null,
         location: r.formattedLocation || r.jobLocationCity || '',
         url: 'https://' + location.host + '/viewjob?jk=' + (r.jobkey || r.jk || ''),
         salaryText: salary,
@@ -183,11 +191,20 @@ export function buildSearchExtractor(): string {
       var loc = text(card, S.location) || '';
       var body = (card.textContent || '');
 
+      // Rendered rating, for the fallback path: Indeed labels it "3.5 out of 5 stars".
+      var ratingEl = card.querySelector('[aria-label*="out of 5 star" i], [data-testid="holistic-rating"]');
+      var ratingText = ratingEl
+        ? (ratingEl.getAttribute('aria-label') || ratingEl.textContent || '')
+        : '';
+      var ratingMatch = ratingText.match(/(\\d(?:\\.\\d)?)/);
+      var rating = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+
       return {
         id: jk || ('dom-' + i),
         title: title.replace(/\\s+/g, ' '),
         company: text(card, S.company) || '',
         companyId: null,
+        companyRating: rating && rating > 0 ? rating : null,
         location: loc,
         url: link && link.href ? link.href : ('https://' + location.host + '/viewjob?jk=' + (jk || '')),
         salaryText: text(card, S.salary),

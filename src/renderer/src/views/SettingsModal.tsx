@@ -17,7 +17,13 @@ import {
   X
 } from 'lucide-react'
 import type { AuthState, Resume, Settings, ThemeMode, UpdateStatus } from '../../../shared/types'
-import { LAYOUTS, MAX_RESUMES, REGIONS } from '../../../shared/types'
+import {
+  DARK_PALETTES,
+  LAYOUTS,
+  LIGHT_PALETTES,
+  MAX_RESUMES,
+  REGIONS
+} from '../../../shared/types'
 import { fileSize } from '../lib/format'
 
 interface Props {
@@ -254,6 +260,59 @@ function Appearance({
               onClick={() => onUpdate({ theme: mode })}
             >
               {mode[0].toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {/*
+        Two separate pickers rather than one long list, because the choice is
+        per mode: the dark theme you like is remembered while you're in light, and
+        following Windows between the two keeps both.
+      */}
+      <Field
+        label="Dark theme"
+        hint="The look Seekr uses whenever it is in dark mode."
+        stack
+      >
+        <div className="themes">
+          {DARK_PALETTES.map((p) => (
+            <button
+              key={p.id}
+              className={`theme-card ${settings.darkPalette === p.id ? 'active' : ''}`}
+              onClick={() => onUpdate({ darkPalette: p.id })}
+              data-tip={p.hint}
+            >
+              <span
+                className="theme-swatch"
+                style={{ background: p.swatch, borderColor: p.swatchAlt }}
+              >
+                <span style={{ background: p.swatchAlt }} />
+                <span style={{ background: settings.accent }} />
+              </span>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      <Field label="Light theme" hint="The look Seekr uses whenever it is in light mode." stack>
+        <div className="themes">
+          {LIGHT_PALETTES.map((p) => (
+            <button
+              key={p.id}
+              className={`theme-card ${settings.lightPalette === p.id ? 'active' : ''}`}
+              onClick={() => onUpdate({ lightPalette: p.id })}
+              data-tip={p.hint}
+            >
+              <span
+                className="theme-swatch"
+                style={{ background: p.swatch, borderColor: p.swatchAlt }}
+              >
+                <span style={{ background: p.swatchAlt }} />
+                <span style={{ background: settings.accent }} />
+              </span>
+              {p.label}
             </button>
           ))}
         </div>

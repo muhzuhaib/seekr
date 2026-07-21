@@ -178,6 +178,12 @@ Everything from the original spec, plus what has been added since. Ticked items 
 - [x] Git repository + .gitignore + README + MIT licence
 - [x] GitHub repo created and first release published (github.com/muhzuhaib/seekr, v0.2.0)
 
+### Appearance
+- [x] Seven themes (v0.4.1): dark = Midnight / Graphite / Ink / Nocturne, light = Paper / Linen /
+      Mist. A palette redefines only the surface family; everything else is inherited, and the
+      accent picker composes with all of them. Remembered per mode.
+- [x] Company star ratings beside the company name (v0.4.1), hidden entirely when Indeed has none
+
 ### Settled
 - [x] Feed layout: Standard / Full width / Two columns — kept as a permanent feature (v0.4.0).
       The toolbar chip stays (it is the fastest way to switch) and the same setting also lives in

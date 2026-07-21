@@ -51,6 +51,15 @@ export default function App(): JSX.Element {
             : 'dark'
           : settings.theme
       root.setAttribute('data-theme', resolved)
+      /*
+        The palette is chosen per mode, so switching to dark at night restores the
+        dark look you picked rather than resetting it — and following the system
+        between the two keeps both choices intact.
+      */
+      root.setAttribute(
+        'data-palette',
+        resolved === 'dark' ? settings.darkPalette : settings.lightPalette
+      )
     }
     apply()
 
@@ -58,7 +67,7 @@ export default function App(): JSX.Element {
     const mq = window.matchMedia('(prefers-color-scheme: light)')
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [settings.theme])
+  }, [settings.theme, settings.darkPalette, settings.lightPalette])
 
   // --- font + accent, pushed straight onto the CSS custom properties the
   // stylesheet already reads, so no component needs to know about them.

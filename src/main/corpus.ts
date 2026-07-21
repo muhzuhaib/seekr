@@ -35,7 +35,9 @@ for (const job of store.get().jobs) index.set(job.id, migrate(job))
 function migrate(job: Job): Job {
   const queries = job.queries ?? [job.query ?? '']
   const salary = job.salary?.raw ? parseSalary(job.salary.raw, job.salary.currency) : job.salary
-  return { ...job, queries, salary: salary ?? null }
+  // Ratings arrived in v0.4.1; jobs cached before that simply don't have one yet
+  // and pick it up the next time their listing is fetched.
+  return { ...job, queries, companyRating: job.companyRating ?? null, salary: salary ?? null }
 }
 
 // ---------------------------------------------------------------- writing

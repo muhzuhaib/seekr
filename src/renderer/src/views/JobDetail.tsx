@@ -16,6 +16,7 @@ import {
 import type { AuthState, Job, Resume, SalaryInsight } from '../../../shared/types'
 import { isStale, money, publishedLine, salaryLabel, workModeLabel } from '../lib/format'
 import Confirm from './Confirm'
+import Rating from './Rating'
 
 interface Props {
   job: Job
@@ -113,6 +114,7 @@ export default function JobDetail({ job: initial, auth, staleAfterDays, onClose 
               <span>
                 <Building2 size={13} />
                 {job.company}
+                <Rating value={job.companyRating} />
               </span>
               <span>
                 <MapPin size={13} />

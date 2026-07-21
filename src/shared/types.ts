@@ -37,6 +37,12 @@ export interface Job {
   title: string
   company: string
   companyId: string | null
+  /**
+   * The company's Indeed star rating, 0–5, or null when they have none. Shown as
+   * a star and a number beside the company; the review count is deliberately not
+   * carried — the rating alone is what tells you something at a glance.
+   */
+  companyRating: number | null
   location: string
   url: string
 
@@ -175,10 +181,91 @@ export interface ApplyResult {
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
+/**
+ * A palette is the *character* of a theme — the surfaces and text colours —
+ * chosen separately for dark and light, and separately from the accent.
+ *
+ * Light/dark is about the room you're in; the palette is about the material the
+ * app is made of. Keeping them apart means switching to dark at night doesn't
+ * throw away the look you picked, and the accent picker keeps working on top of
+ * whichever palette is active.
+ */
+export type DarkPalette = 'midnight' | 'graphite' | 'ink' | 'nocturne'
+export type LightPalette = 'paper' | 'linen' | 'mist'
+
+export interface PaletteOption<T> {
+  id: T
+  label: string
+  hint: string
+  /** The surface colour, for the preview swatch in Settings. */
+  swatch: string
+  /** A second tone from the palette, so the swatch reads as a palette not a dot. */
+  swatchAlt: string
+}
+
+export const DARK_PALETTES: PaletteOption<DarkPalette>[] = [
+  {
+    id: 'midnight',
+    label: 'Midnight',
+    hint: 'Deep blue-black. Seekr’s original dark look.',
+    swatch: '#0a0c0f',
+    swatchAlt: '#101318'
+  },
+  {
+    id: 'graphite',
+    label: 'Graphite',
+    hint: 'Neutral charcoal — no colour cast at all, easy on the eyes for long sessions.',
+    swatch: '#1e1e1e',
+    swatchAlt: '#272727'
+  },
+  {
+    id: 'ink',
+    label: 'Ink',
+    hint: 'True black with fine hairlines. Sharpest contrast, best on OLED.',
+    swatch: '#000000',
+    swatchAlt: '#0d0d0f'
+  },
+  {
+    id: 'nocturne',
+    label: 'Nocturne',
+    hint: 'Warm near-black with a hint of brown. Softer and quieter at night.',
+    swatch: '#14110f',
+    swatchAlt: '#1c1815'
+  }
+]
+
+export const LIGHT_PALETTES: PaletteOption<LightPalette>[] = [
+  {
+    id: 'paper',
+    label: 'Paper',
+    hint: 'Crisp cool white. Seekr’s original light look.',
+    swatch: '#f7f8fa',
+    swatchAlt: '#ffffff'
+  },
+  {
+    id: 'linen',
+    label: 'Linen',
+    hint: 'Warm off-white, like good stationery. Less glare than pure white.',
+    swatch: '#f6f3ee',
+    swatchAlt: '#fffdf9'
+  },
+  {
+    id: 'mist',
+    label: 'Mist',
+    hint: 'Cool grey-blue. Calm and slightly cooler than Paper.',
+    swatch: '#eef1f6',
+    swatchAlt: '#fbfcfe'
+  }
+]
+
 export interface Settings {
   /** Null until the user picks a region on first launch. */
   region: string | null
   theme: ThemeMode
+  /** Which dark palette to use whenever the app is in dark mode. */
+  darkPalette: DarkPalette
+  /** Which light palette to use whenever the app is in light mode. */
+  lightPalette: LightPalette
   fontFamily: string
   accent: string
 
@@ -218,6 +305,8 @@ export const LAYOUTS: { id: LayoutMode; label: string; hint: string }[] = [
 export const DEFAULT_SETTINGS: Settings = {
   region: null,
   theme: 'system',
+  darkPalette: 'midnight',
+  lightPalette: 'paper',
   fontFamily: 'Inter',
   accent: '#2563eb',
   staleAfterDays: 15,
